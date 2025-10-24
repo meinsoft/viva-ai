@@ -1,0 +1,12 @@
+{
+  "name": "@viva-ai/utils",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared utilities for Viva.AI",
+  "exports": {
+    "./http.js": "./http.js",
+    "./logger.js": "./logger.js",
+    "./selectors.js": "./selectors.js",
+    "./safety.js": "./safety.js"
+  }
+}

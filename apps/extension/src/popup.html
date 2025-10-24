@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Viva.AI</title>
+  <style>
+    body {
+      width: 350px;
+      min-height: 400px;
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    h1 {
+      margin: 0 0 20px 0;
+      font-size: 24px;
+    }
+    #status {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    #voiceInput {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      margin-bottom: 10px;
+      box-sizing: border-box;
+    }
+    button {
+      width: 100%;
+      padding: 15px;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+    button:hover {
+      transform: scale(1.02);
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    .safe-mode {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      text-align: center;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎙️ Viva.AI</h1>
+  <div id="status">Ready to assist</div>
+  <input type="text" id="voiceInput" placeholder="Type or speak your request...">
+  <button id="processBtn">Process Request</button>
+  <div class="safe-mode">🛡️ SAFE MODE: ON</div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
