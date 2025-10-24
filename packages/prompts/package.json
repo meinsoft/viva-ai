@@ -5,6 +5,7 @@
   "description": "Shared AI prompt templates for Viva.AI",
   "main": "intent_prompt.js",
   "exports": {
-    "./intent_prompt.js": "./intent_prompt.js"
+    "./intent_prompt.js": "./intent_prompt.js",
+    "./plan_prompt.js": "./plan_prompt.js"
   }
 }

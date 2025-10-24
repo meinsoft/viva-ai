@@ -6,6 +6,7 @@
   "main": "index.js",
   "exports": {
     "./intent_schema.js": "./intent_schema.js",
-    "./action_schema.js": "./action_schema.js"
+    "./action_schema.js": "./action_schema.js",
+    "./plan_schema.js": "./plan_schema.js"
   }
 }
