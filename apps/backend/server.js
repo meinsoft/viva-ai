@@ -1,4 +1,5 @@
 // Viva.AI Backend Server - AI Orchestration
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import aiRouter from './routes/ai.js';

@@ -17,34 +17,49 @@ export async function processWithGemini(prompt) {
     throw new Error('GEMINI_API_KEY not configured');
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+  const model = 'gemini-1.5-flash-latest';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
 
   try {
-    const response = await httpClient.post(endpoint, {
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt
-            }
-          ]
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: prompt
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 2048
         }
-      ],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024
-      }
+      })
     });
 
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error('Gemini API HTTP error:', response.status, errorText);
+      throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!text) {
+      logger.error('Invalid Gemini response structure:', data);
       throw new Error('Invalid response from Gemini API');
     }
 
     return {
       text,
-      model: 'gemini-pro',
+      model,
       provider: 'google'
     };
 
