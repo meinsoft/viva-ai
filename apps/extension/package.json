@@ -1,0 +1,15 @@
+{
+  "name": "@viva-ai/extension",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Viva.AI Chrome Extension - Voice-first AI assistant",
+  "scripts": {
+    "dev": "echo 'Extension development mode'",
+    "build": "echo 'Building extension'"
+  },
+  "dependencies": {
+    "@viva-ai/prompts": "*",
+    "@viva-ai/schemas": "*",
+    "@viva-ai/utils": "*"
+  }
+}
