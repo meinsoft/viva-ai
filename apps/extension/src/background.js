@@ -22,7 +22,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Viva.AI] Background received message:', message);
 
   if (message.type === 'PROCESS_INTENT') {
-    processIntent(message.intent, message.context)
+    processIntent(message.utterance, message.pageMap, message.memory, message.locale)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep channel open for async response
@@ -32,14 +32,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Send intent to backend for AI processing
-async function processIntent(intent, context) {
+async function processIntent(utterance, pageMap, memory = {}, locale = 'az') {
   try {
     const response = await fetch(`${BACKEND_URL}/ai/intent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ intent, context })
+      body: JSON.stringify({ utterance, pageMap, memory, locale })
     });
 
     if (!response.ok) {

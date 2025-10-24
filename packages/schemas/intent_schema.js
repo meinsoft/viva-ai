@@ -1,21 +1,26 @@
-// Intent Schema - Validates user intent and context structure
+// Intent Schema - Validates user intent and context structure for accessibility-first AI
 
 export const intentSchema = {
   type: 'object',
-  required: ['intent'],
+  required: ['utterance'],
   properties: {
-    intent: {
+    utterance: {
       type: 'string',
       minLength: 1,
-      description: 'User\'s natural language request'
+      description: 'User\'s voice input (exact transcription)'
     },
-    context: {
+    pageMap: {
       type: 'object',
-      properties: {
-        url: { type: 'string' },
-        title: { type: 'string' },
-        heading: { type: 'string' }
-      }
+      description: 'Structured page content (headings, buttons, forms, etc.)'
+    },
+    memory: {
+      type: 'object',
+      description: 'User preferences, mode, recent context'
+    },
+    locale: {
+      type: 'string',
+      description: 'User language code (az, en, tr, etc.)',
+      default: 'az'
     }
   }
 };
@@ -33,12 +38,20 @@ export function validateIntent(data) {
     return { valid: false, errors };
   }
 
-  if (!data.intent || typeof data.intent !== 'string' || data.intent.trim().length === 0) {
-    errors.push('Intent must be a non-empty string');
+  if (!data.utterance || typeof data.utterance !== 'string' || data.utterance.trim().length === 0) {
+    errors.push('Utterance must be a non-empty string');
   }
 
-  if (data.context && typeof data.context !== 'object') {
-    errors.push('Context must be an object if provided');
+  if (data.pageMap && typeof data.pageMap !== 'object') {
+    errors.push('PageMap must be an object if provided');
+  }
+
+  if (data.memory && typeof data.memory !== 'object') {
+    errors.push('Memory must be an object if provided');
+  }
+
+  if (data.locale && typeof data.locale !== 'string') {
+    errors.push('Locale must be a string if provided');
   }
 
   return {

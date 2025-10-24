@@ -10,18 +10,18 @@ const router = express.Router();
 // POST /ai/intent - Process user intent with AI orchestration
 router.post('/intent', async (req, res) => {
   try {
-    const { intent, context } = req.body;
+    const { utterance, pageMap, memory, locale } = req.body;
 
-    logger.info('Processing intent:', { intent, context });
+    logger.info('Processing intent:', { utterance, pageMap, memory, locale });
 
     // Validate intent schema
-    const validation = validateIntent({ intent, context });
+    const validation = validateIntent({ utterance, pageMap, memory, locale });
     if (!validation.valid) {
       return res.status(400).json({ error: 'Invalid intent', details: validation.errors });
     }
 
     // Build prompt using shared template
-    const prompt = intentPrompt(intent, context);
+    const prompt = intentPrompt(utterance, pageMap, memory, locale);
 
     // Try Chrome Built-in AI first, fallback to Gemini
     let result;

@@ -28,13 +28,31 @@ async function processRequest() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     // Get page context
-    const context = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_CONTEXT' });
+    const pageContext = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_CONTEXT' });
+
+    // Build pageMap from context
+    const pageMap = {
+      url: pageContext.url,
+      title: pageContext.title,
+      heading: pageContext.heading
+    };
+
+    // Get user preferences from localStorage
+    const memory = {
+      userMode: 'voice',
+      recentContext: []
+    };
+
+    // Get user locale (default to 'az')
+    const locale = 'az';
 
     // Send to background for AI processing
     const result = await chrome.runtime.sendMessage({
       type: 'PROCESS_INTENT',
-      intent: input,
-      context
+      utterance: input,
+      pageMap,
+      memory,
+      locale
     });
 
     if (result.error) {
