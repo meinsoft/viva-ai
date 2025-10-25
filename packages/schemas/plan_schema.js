@@ -12,7 +12,7 @@ export const actionTypes = [
 
 export const planSchema = {
   type: 'object',
-  required: ['actions', 'speak'],
+  required: ['actions', 'speak', 'confidence'],
   properties: {
     actions: {
       type: 'array',
@@ -45,6 +45,12 @@ export const planSchema = {
     speak: {
       type: 'string',
       description: 'Short voice response to user (max 1 sentence)'
+    },
+    confidence: {
+      type: 'number',
+      minimum: 0.0,
+      maximum: 1.0,
+      description: 'Confidence score between 0.0 and 1.0'
     }
   }
 };
@@ -90,6 +96,12 @@ export function validatePlan(plan) {
 
   if (!plan.speak || typeof plan.speak !== 'string') {
     errors.push('Plan.speak must be a non-empty string');
+  }
+
+  if (plan.confidence === undefined || typeof plan.confidence !== 'number') {
+    errors.push('Plan.confidence must be a number');
+  } else if (plan.confidence < 0.0 || plan.confidence > 1.0) {
+    errors.push('Plan.confidence must be between 0.0 and 1.0');
   }
 
   return {
