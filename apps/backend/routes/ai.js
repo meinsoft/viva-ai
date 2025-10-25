@@ -2,7 +2,7 @@
 import express from 'express';
 import { intentPrompt } from '@viva-ai/prompts/intent_prompt.js';
 import { planPrompt } from '@viva-ai/prompts/plan_prompt.js';
-import { validateIntent } from '@viva-ai/schemas/intent_schema.js';
+import { validateIntent, validateIntentResponse } from '@viva-ai/schemas/intent_schema.js';
 import { validatePlan } from '@viva-ai/schemas/plan_schema.js';
 import { logger } from '@viva-ai/utils/logger.js';
 import { processWithChromeAI, processWithGemini } from '../services/ai_orchestrator.js';
@@ -36,9 +36,27 @@ router.post('/intent', async (req, res) => {
       logger.info('Processed with Gemini API');
     }
 
+    // Parse the AI response (should be JSON)
+    let intentResponse;
+    try {
+      intentResponse = typeof result.text === 'string' ? JSON.parse(result.text) : result;
+    } catch (parseError) {
+      logger.error('Failed to parse AI intent response:', parseError);
+      return res.status(500).json({ error: 'Invalid intent format from AI', details: parseError.message });
+    }
+
+    // Validate intent response structure
+    const responseValidation = validateIntentResponse(intentResponse);
+    if (!responseValidation.valid) {
+      logger.error('Invalid intent response structure:', responseValidation.errors);
+      return res.status(500).json({ error: 'AI generated invalid intent', details: responseValidation.errors });
+    }
+
     res.json({
       success: true,
-      result,
+      intent: intentResponse.intent,
+      language: intentResponse.language,
+      confidence: intentResponse.confidence,
       timestamp: new Date().toISOString()
     });
 

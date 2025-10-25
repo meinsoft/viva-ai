@@ -60,4 +60,49 @@ export function validateIntent(data) {
   };
 }
 
+/**
+ * Validate intent response from AI
+ * @param {object} response - AI intent response to validate
+ * @returns {object} { valid: boolean, errors: array }
+ */
+export function validateIntentResponse(response) {
+  const errors = [];
+
+  if (!response || typeof response !== 'object') {
+    errors.push('Intent response must be an object');
+    return { valid: false, errors };
+  }
+
+  const validIntents = [
+    'page_insight',
+    'search',
+    'summarize',
+    'vision_describe',
+    'interact_click',
+    'interact_scroll',
+    'interact_fill',
+    'navigate',
+    'unknown'
+  ];
+
+  if (!response.intent || !validIntents.includes(response.intent)) {
+    errors.push(`Intent must be one of: ${validIntents.join(', ')}`);
+  }
+
+  if (!response.language || typeof response.language !== 'string') {
+    errors.push('Language must be a non-empty string (ISO 639-1 code)');
+  }
+
+  if (response.confidence === undefined || typeof response.confidence !== 'number') {
+    errors.push('Confidence must be a number');
+  } else if (response.confidence < 0.0 || response.confidence > 1.0) {
+    errors.push('Confidence must be between 0.0 and 1.0');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
 export default intentSchema;
