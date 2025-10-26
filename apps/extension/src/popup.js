@@ -211,24 +211,21 @@ async function processUtterance(utterance) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 for TTS (TOP LANGUAGES ONLY)
-// Unsupported languages fallback to English automatically
+// Map ISO 639-1 language codes to BCP 47 for TTS (TOP 3 LANGUAGES ONLY)
+// Only English, Spanish, French supported
 function mapLanguageToVoice(isoCode) {
-  const topLanguages = {
+  const supportedLanguages = {
     'en': 'en-US',
-    'tr': 'tr-TR',
-    'ru': 'ru-RU',
     'es': 'es-ES',
-    'fr': 'fr-FR',
-    'de': 'de-DE'
+    'fr': 'fr-FR'
   };
 
-  // If language is supported, use it; otherwise fallback to English
-  if (topLanguages[isoCode]) {
-    return topLanguages[isoCode];
+  // Always fallback to English if not supported
+  if (supportedLanguages[isoCode]) {
+    return supportedLanguages[isoCode];
   }
 
-  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  debugLog('Unsupported TTS language:', isoCode, '→ using English');
   return 'en-US';
 }
 

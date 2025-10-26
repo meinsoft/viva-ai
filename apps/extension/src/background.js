@@ -273,7 +273,74 @@ async function executeActionOnTab(tabId, action, language = 'az') {
   }
 }
 
-// Fuzzy match score for tab switching (0-100)
+// Phonetic similarity for speech recognition errors (e.g., "get up" → "github")
+function phoneticSimilarity(str1, str2) {
+  // Remove spaces and special characters for phonetic comparison
+  const clean1 = str1.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean2 = str2.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Common speech recognition patterns
+  const patterns = [
+    // "get up" → "github"
+    { spoken: 'getup', written: 'github' },
+    { spoken: 'git hub', written: 'github' },
+    // "you tube" → "youtube"
+    { spoken: 'youtoo', written: 'youtube' },
+    { spoken: 'youtube', written: 'youtube' },
+    // "slack" variations
+    { spoken: 'slak', written: 'slack' },
+    // "chrome" variations
+    { spoken: 'krome', written: 'chrome' }
+  ];
+
+  for (const pattern of patterns) {
+    if (clean1.includes(pattern.spoken) && clean2.includes(pattern.written)) {
+      return 95;
+    }
+    if (clean1.includes(pattern.written) && clean2.includes(pattern.spoken)) {
+      return 95;
+    }
+  }
+
+  // Levenshtein distance for phonetic similarity
+  const maxLen = Math.max(clean1.length, clean2.length);
+  if (maxLen === 0) return 0;
+
+  const distance = levenshteinDistance(clean1, clean2);
+  const similarity = ((maxLen - distance) / maxLen) * 100;
+
+  return similarity;
+}
+
+// Levenshtein distance for edit distance calculation
+function levenshteinDistance(str1, str2) {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix = [];
+
+  for (let i = 0; i <= len1; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= len2; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return matrix[len1][len2];
+}
+
+// Enhanced fuzzy match score with phonetic awareness (0-100)
 function fuzzyMatchScore(query, text) {
   if (!text) return 0;
 
@@ -287,7 +354,11 @@ function fuzzyMatchScore(query, text) {
   if (textLower.startsWith(queryLower)) return 90;
 
   // Contains exact substring
-  if (textLower.includes(queryLower)) return 80;
+  if (textLower.includes(queryLower)) return 85;
+
+  // Phonetic similarity check (for speech recognition errors)
+  const phoneticScore = phoneticSimilarity(queryLower, textLower);
+  if (phoneticScore > 80) return phoneticScore;
 
   // Word boundary match
   const words = queryLower.split(/\s+/);
@@ -308,7 +379,7 @@ function fuzzyMatchScore(query, text) {
   }
   const fuzzyScore = (matches / queryLower.length) * 40;
 
-  return fuzzyScore;
+  return Math.max(fuzzyScore, phoneticScore * 0.5);
 }
 
 // Execute TAB_SWITCH action with smart fuzzy matching

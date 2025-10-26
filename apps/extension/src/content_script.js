@@ -379,24 +379,20 @@ function executeFill(action) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 tags for TTS (TOP LANGUAGES ONLY)
-// Unsupported languages automatically fallback to English
+// Map ISO 639-1 language codes to BCP 47 tags for TTS (TOP 3 LANGUAGES ONLY)
+// Only English, Spanish, French supported - all others use English
 function mapLanguageToVoice(isoCode) {
-  const topLanguages = {
-    'en': 'en-US',  // English
-    'tr': 'tr-TR',  // Turkish
-    'ru': 'ru-RU',  // Russian
-    'es': 'es-ES',  // Spanish
-    'fr': 'fr-FR',  // French
-    'de': 'de-DE'   // German
+  const supportedLanguages = {
+    'en': 'en-US',
+    'es': 'es-ES',
+    'fr': 'fr-FR'
   };
 
-  // If supported, use it; otherwise fallback to English
-  if (topLanguages[isoCode]) {
-    return topLanguages[isoCode];
+  if (supportedLanguages[isoCode]) {
+    return supportedLanguages[isoCode];
   }
 
-  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  debugLog('Unsupported TTS language:', isoCode, '→ using English');
   return 'en-US';
 }
 
