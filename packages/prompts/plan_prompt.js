@@ -53,15 +53,20 @@ CRITICAL RULES:
    - ALWAYS include "target" with "selector"
 4. For SAFE actions (SCROLL_TO, ANNOUNCE, SUMMARIZE, DESCRIBE):
    - Set "confirmation": false
-5. "speak" field is REQUIRED — max 1 sentence for TTS
-6. "confidence" field is REQUIRED — float 0.0 to 1.0
-7. If unclear or unsafe — return empty actions array with speak explaining why
+5. For SCROLL_TO actions — MANDATORY REQUIREMENTS:
+   - MUST ALWAYS include "target" with "selector"
+   - If user mentioned a specific element → use that element's CSS selector
+   - If NO specific element mentioned → ALWAYS use: "target": { "selector": "body" }
+   - NEVER return SCROLL_TO without a target.selector
+6. "speak" field is REQUIRED — max 1 sentence for TTS
+7. "confidence" field is REQUIRED — float 0.0 to 1.0
+8. If unclear or unsafe — return empty actions array with speak explaining why
 
 ---
 
 ACTION TYPE DETAILS:
 
-- SCROLL_TO: Scroll page (no target needed, or target.selector for specific element)
+- SCROLL_TO: Scroll page — MUST ALWAYS include target.selector (use "body" if no specific element mentioned)
 - CLICK: Click element (needs target.selector, confirmation: true)
 - FILL: Fill input/textarea (needs target.selector, value, confirmation: true)
 - NAVIGATE: Go to URL (needs value as URL, confirmation: true)
@@ -77,10 +82,20 @@ Input: { "intent": "interact_scroll", "utterance": "aşağı keç" }
 Output:
 {
   "actions": [
-    { "type": "SCROLL_TO", "confirmation": false }
+    { "type": "SCROLL_TO", "target": { "selector": "body" }, "confirmation": false }
   ],
   "speak": "Scrolling down",
   "confidence": 0.94
+}
+
+Input: { "intent": "interact_scroll", "utterance": "scroll to comments" }
+Output:
+{
+  "actions": [
+    { "type": "SCROLL_TO", "target": { "selector": "#comments" }, "confirmation": false }
+  ],
+  "speak": "Scrolling to comments",
+  "confidence": 0.91
 }
 
 Input: { "intent": "page_insight", "utterance": "bu səhifə nə haqqındadır" }
