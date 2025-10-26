@@ -1,4 +1,6 @@
-// Viva.AI Popup Script - Voice Input & Plan Execution
+// Viva.AI Popup Script - Autonomous Cognitive Agent Interface
+
+import { sessionMemory } from './memory.js';
 
 // Diagnostics mode helper
 function isDiagnosticsEnabled() {
@@ -15,8 +17,8 @@ function debugLog(...args) {
   }
 }
 
-console.log('[Viva.AI] Popup loaded');
-debugLog('Diagnostics mode active');
+console.log('[Viva.AI] Autonomous Cognitive Mode - ACTIVE');
+debugLog('J.A.R.V.I.S-like intelligence enabled');
 
 const BACKEND_URL = 'http://localhost:5000';
 
@@ -94,19 +96,24 @@ async function processUtterance(utterance) {
     debugLog('Processing utterance:', utterance);
 
     // STAGE 0: Get pageMap from content script
-    updateStatus('Reading page...');
+    updateStatus('Analyzing...');
     try {
       const pageMapResponse = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_CONTEXT' });
       currentPageMap = pageMapResponse.pageMap;
+      sessionMemory.updatePageContext(currentPageMap);
       debugLog('PageMap received:', currentPageMap);
     } catch (error) {
       console.warn('[Viva.AI] Could not get pageMap:', error.message);
       currentPageMap = {};
     }
 
-    // STAGE 1: Classify intent
+    // Get memory context for cognitive understanding
+    const memoryContext = sessionMemory.getRelevantContext();
+    debugLog('Memory context:', memoryContext);
+
+    // STAGE 1: Classify intent with autonomous cognitive understanding
     updateStatus('Understanding...');
-    debugLog('Calling /ai/intent');
+    debugLog('Calling /ai/intent with memory context');
 
     const intentResponse = await fetch(`${BACKEND_URL}/ai/intent`, {
       method: 'POST',
@@ -114,8 +121,8 @@ async function processUtterance(utterance) {
       body: JSON.stringify({
         utterance: utterance,
         pageMap: currentPageMap,
-        memory: {},
-        locale: 'az'
+        memory: memoryContext,
+        locale: 'en'
       })
     });
 
@@ -182,6 +189,15 @@ async function processUtterance(utterance) {
       debugLog(`Executed ${executeResult.executed || 0}/${executeResult.total || plan.actions.length} actions`);
     } else {
       updateStatus('Action completed');
+    }
+
+    // Update session memory with conversation turn
+    sessionMemory.addConversationTurn(utterance, intent, plan.speak);
+    debugLog('Memory updated with conversation turn');
+
+    // Update last action in memory
+    if (plan.actions && plan.actions.length > 0) {
+      sessionMemory.updateLastAction(plan.actions[plan.actions.length - 1], executeResult);
     }
 
     if (!executeResult.success) {
