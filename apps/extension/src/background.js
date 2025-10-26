@@ -273,7 +273,45 @@ async function executeActionOnTab(tabId, action, language = 'az') {
   }
 }
 
-// Execute TAB_SWITCH action
+// Fuzzy match score for tab switching (0-100)
+function fuzzyMatchScore(query, text) {
+  if (!text) return 0;
+
+  const queryLower = query.toLowerCase().trim();
+  const textLower = text.toLowerCase();
+
+  // Exact match
+  if (textLower === queryLower) return 100;
+
+  // Starts with
+  if (textLower.startsWith(queryLower)) return 90;
+
+  // Contains exact substring
+  if (textLower.includes(queryLower)) return 80;
+
+  // Word boundary match
+  const words = queryLower.split(/\s+/);
+  const textWords = textLower.split(/\s+/);
+  const matchingWords = words.filter(w => textWords.some(tw => tw.includes(w)));
+  if (matchingWords.length === words.length) return 70;
+  if (matchingWords.length > 0) return 50 + (matchingWords.length / words.length) * 20;
+
+  // Character-level fuzzy (phonetic/typo tolerance)
+  let matches = 0;
+  let pos = 0;
+  for (const char of queryLower) {
+    const idx = textLower.indexOf(char, pos);
+    if (idx >= 0) {
+      matches++;
+      pos = idx + 1;
+    }
+  }
+  const fuzzyScore = (matches / queryLower.length) * 40;
+
+  return fuzzyScore;
+}
+
+// Execute TAB_SWITCH action with smart fuzzy matching
 async function executeTabSwitch(action) {
   try {
     debugLog('Executing TAB_SWITCH:', action.value);
@@ -282,43 +320,51 @@ async function executeTabSwitch(action) {
       throw new Error('TAB_SWITCH requires a value');
     }
 
-    // Parse value: {by: "title"|"url", query: "..."}
-    let searchCriteria;
+    // Parse value
+    let searchQuery;
     if (typeof action.value === 'string') {
-      // Simple string query - search by title
-      searchCriteria = { by: 'title', query: action.value };
+      searchQuery = action.value;
+    } else if (action.value.query) {
+      searchQuery = action.value.query;
     } else {
-      searchCriteria = action.value;
+      throw new Error('Invalid TAB_SWITCH value');
     }
 
-    // Query tabs based on criteria
-    let tabs;
-    if (searchCriteria.by === 'url') {
-      tabs = await chrome.tabs.query({ url: `*://*/*${searchCriteria.query}*` });
-    } else {
-      // Search by title
-      tabs = await chrome.tabs.query({});
-      tabs = tabs.filter(tab =>
-        tab.title && tab.title.toLowerCase().includes(searchCriteria.query.toLowerCase())
-      );
+    // Get all tabs
+    const allTabs = await chrome.tabs.query({});
+
+    // Score each tab based on title and URL
+    const scoredTabs = allTabs.map(tab => {
+      const titleScore = fuzzyMatchScore(searchQuery, tab.title);
+      const urlScore = fuzzyMatchScore(searchQuery, tab.url);
+      const maxScore = Math.max(titleScore, urlScore);
+      return { tab, score: maxScore };
+    });
+
+    // Sort by score descending
+    scoredTabs.sort((a, b) => b.score - a.score);
+
+    debugLog('Tab match scores:', scoredTabs.slice(0, 3).map(s => ({ title: s.tab.title, score: s.score })));
+
+    // Get best match (threshold: score > 30)
+    const bestMatch = scoredTabs[0];
+    if (bestMatch.score < 30) {
+      throw new Error(`No good tab match for: ${searchQuery} (best score: ${bestMatch.score})`);
     }
 
-    if (tabs.length === 0) {
-      throw new Error(`No tabs found matching: ${searchCriteria.query}`);
-    }
-
-    // Switch to first matching tab
-    const targetTab = tabs[0];
+    // Switch to best matching tab
+    const targetTab = bestMatch.tab;
     await chrome.tabs.update(targetTab.id, { active: true });
     await chrome.windows.update(targetTab.windowId, { focused: true });
 
-    debugLog('Switched to tab:', targetTab.title);
+    debugLog('Switched to tab:', targetTab.title, 'score:', bestMatch.score);
 
     return {
       success: true,
       executed: true,
       type: 'TAB_SWITCH',
-      tab: { id: targetTab.id, title: targetTab.title, url: targetTab.url }
+      tab: { id: targetTab.id, title: targetTab.title, url: targetTab.url },
+      matchScore: bestMatch.score
     };
   } catch (error) {
     console.error('[Viva.AI] TAB_SWITCH error:', error);
@@ -326,7 +372,79 @@ async function executeTabSwitch(action) {
   }
 }
 
-// Execute NAVIGATE action
+// Popular site mapping for smart navigation
+const POPULAR_SITES = {
+  'youtube': 'https://www.youtube.com',
+  'gmail': 'https://mail.google.com',
+  'google': 'https://www.google.com',
+  'facebook': 'https://www.facebook.com',
+  'instagram': 'https://www.instagram.com',
+  'twitter': 'https://twitter.com',
+  'x': 'https://twitter.com',
+  'linkedin': 'https://www.linkedin.com',
+  'reddit': 'https://www.reddit.com',
+  'github': 'https://github.com',
+  'stackoverflow': 'https://stackoverflow.com',
+  'chatgpt': 'https://chat.openai.com',
+  'openai': 'https://chat.openai.com',
+  'claude': 'https://claude.ai',
+  'anthropic': 'https://claude.ai',
+  'netflix': 'https://www.netflix.com',
+  'amazon': 'https://www.amazon.com',
+  'ebay': 'https://www.ebay.com',
+  'wikipedia': 'https://www.wikipedia.org',
+  'medium': 'https://medium.com',
+  'notion': 'https://www.notion.so',
+  'figma': 'https://www.figma.com',
+  'canva': 'https://www.canva.com',
+  'spotify': 'https://www.spotify.com',
+  'twitch': 'https://www.twitch.tv',
+  'discord': 'https://discord.com',
+  'slack': 'https://slack.com',
+  'zoom': 'https://zoom.us',
+  'drive': 'https://drive.google.com',
+  'docs': 'https://docs.google.com',
+  'sheets': 'https://sheets.google.com'
+};
+
+// Resolve navigation target to actual URL
+function resolveNavigationURL(input) {
+  const inputLower = input.toLowerCase().trim();
+
+  // Check if it's already a valid URL
+  try {
+    const url = new URL(input);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.href;
+    }
+  } catch (e) {
+    // Not a valid URL, continue
+  }
+
+  // Check if it starts with www. or has domain pattern
+  if (inputLower.startsWith('www.') || /^[\w-]+\.[\w]{2,}/.test(inputLower)) {
+    return `https://${input}`;
+  }
+
+  // Check popular sites mapping
+  for (const [keyword, url] of Object.entries(POPULAR_SITES)) {
+    if (inputLower.includes(keyword)) {
+      debugLog('Matched popular site:', keyword, '→', url);
+      return url;
+    }
+  }
+
+  // Check if it's a domain-like pattern (e.g., "github.com", "instagram.com")
+  if (/^[\w-]+\.com|\.org|\.net|\.io|\.ai|\.dev/.test(inputLower)) {
+    return `https://${input}`;
+  }
+
+  // Fallback: treat as search query only if nothing else matches
+  debugLog('No direct URL match, using search fallback for:', input);
+  return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+}
+
+// Execute NAVIGATE action with smart URL resolution
 async function executeNavigate(tabId, action) {
   try {
     debugLog('Executing NAVIGATE:', action.value);
@@ -335,25 +453,20 @@ async function executeNavigate(tabId, action) {
       throw new Error('NAVIGATE requires a URL value');
     }
 
-    // Validate URL
-    let url;
-    try {
-      url = new URL(action.value, 'https://');
-    } catch (e) {
-      // Try as search query if not valid URL
-      url = new URL(`https://www.google.com/search?q=${encodeURIComponent(action.value)}`);
-    }
+    // Resolve to actual URL
+    const targetURL = resolveNavigationURL(action.value);
 
     // Navigate the tab
-    await chrome.tabs.update(tabId, { url: url.href });
+    await chrome.tabs.update(tabId, { url: targetURL });
 
-    debugLog('Navigated to:', url.href);
+    debugLog('Navigated to:', targetURL);
 
     return {
       success: true,
       executed: true,
       type: 'NAVIGATE',
-      url: url.href
+      url: targetURL,
+      original: action.value
     };
   } catch (error) {
     console.error('[Viva.AI] NAVIGATE error:', error);
