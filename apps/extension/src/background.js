@@ -1,6 +1,22 @@
 // Viva.AI Background Service Worker
 
+// Diagnostics mode helper
+function isDiagnosticsEnabled() {
+  try {
+    return localStorage.getItem('viva_debug') === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+function debugLog(...args) {
+  if (isDiagnosticsEnabled()) {
+    console.log('[VIVA]', ...args);
+  }
+}
+
 console.log('[Viva.AI] Background service worker started');
+debugLog('Diagnostics mode enabled');
 
 const BACKEND_URL = 'http://localhost:5000';
 
@@ -36,7 +52,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'REQUEST_EXECUTE_ACTION') {
-    executeActionOnTab(message.tabId, message.action)
+    executeActionOnTab(message.tabId, message.action, message.language)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ error: error.message }));
+    return true; // Keep channel open for async response
+  }
+
+  if (message.type === 'EXECUTE_PLAN') {
+    executePlan(message.tabId, message.plan, message.language)
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep channel open for async response
@@ -201,15 +224,16 @@ function isValidPlan(plan) {
   }
 
   // Validate each action
-  const validActionTypes = ['SCROLL_TO', 'CLICK', 'SUMMARIZE', 'DESCRIBE', 'ANNOUNCE', 'FILL', 'NAVIGATE'];
+  const validActionTypes = ['SCROLL_TO', 'CLICK', 'SUMMARIZE', 'DESCRIBE', 'ANNOUNCE', 'FILL', 'NAVIGATE', 'TAB_SWITCH'];
 
   for (const action of plan.actions) {
     if (!action.type || !validActionTypes.includes(action.type)) {
+      debugLog('Invalid action type:', action.type);
       return false;
     }
 
     // Actions that modify the page should have confirmation flag
-    const modifyingActions = ['CLICK', 'FILL', 'NAVIGATE'];
+    const modifyingActions = ['CLICK', 'FILL', 'NAVIGATE', 'TAB_SWITCH'];
     if (modifyingActions.includes(action.type) && action.confirmation === undefined) {
       console.warn('[Viva.AI] Modifying action missing confirmation flag:', action);
     }
@@ -219,27 +243,166 @@ function isValidPlan(plan) {
 }
 
 // Execute action on specific tab
-async function executeActionOnTab(tabId, action) {
+async function executeActionOnTab(tabId, action, language = 'az') {
   try {
+    debugLog('executeActionOnTab:', action.type, 'on tab', tabId);
+
     // Check if action requires confirmation
     if (action.confirmation === true) {
-      console.log('[Viva.AI] Action requires confirmation, skipping auto-execution:', action);
+      debugLog('Action requires confirmation, not auto-executing:', action.type);
       return {
         success: false,
         requiresConfirmation: true,
+        action,
         message: 'Action requires user confirmation'
       };
     }
 
-    // Send action to content script for execution
+    // Handle TAB_SWITCH - requires chrome.tabs API (background only)
+    if (action.type === 'TAB_SWITCH') {
+      return await executeTabSwitch(action);
+    }
+
+    // Handle NAVIGATE - requires chrome.tabs API (background only)
+    if (action.type === 'NAVIGATE') {
+      return await executeNavigate(tabId, action);
+    }
+
+    // Send other actions to content script for execution
     const result = await chrome.tabs.sendMessage(tabId, {
       type: 'EXECUTE_ACTION',
-      action: action
+      action: action,
+      language: language
     });
 
+    debugLog('Action executed on content script:', action.type, result);
     return result;
   } catch (error) {
     console.error('[Viva.AI] Error executing action:', error);
+    debugLog('Action execution error:', action.type, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// Execute TAB_SWITCH action
+async function executeTabSwitch(action) {
+  try {
+    debugLog('Executing TAB_SWITCH:', action.value);
+
+    if (!action.value) {
+      throw new Error('TAB_SWITCH requires a value');
+    }
+
+    // Parse value: {by: "title"|"url", query: "..."}
+    let searchCriteria;
+    if (typeof action.value === 'string') {
+      // Simple string query - search by title
+      searchCriteria = { by: 'title', query: action.value };
+    } else {
+      searchCriteria = action.value;
+    }
+
+    // Query tabs based on criteria
+    let tabs;
+    if (searchCriteria.by === 'url') {
+      tabs = await chrome.tabs.query({ url: `*://*/*${searchCriteria.query}*` });
+    } else {
+      // Search by title
+      tabs = await chrome.tabs.query({});
+      tabs = tabs.filter(tab =>
+        tab.title && tab.title.toLowerCase().includes(searchCriteria.query.toLowerCase())
+      );
+    }
+
+    if (tabs.length === 0) {
+      throw new Error(`No tabs found matching: ${searchCriteria.query}`);
+    }
+
+    // Switch to first matching tab
+    const targetTab = tabs[0];
+    await chrome.tabs.update(targetTab.id, { active: true });
+    await chrome.windows.update(targetTab.windowId, { focused: true });
+
+    debugLog('Switched to tab:', targetTab.title);
+
+    return {
+      success: true,
+      executed: true,
+      type: 'TAB_SWITCH',
+      tab: { id: targetTab.id, title: targetTab.title, url: targetTab.url }
+    };
+  } catch (error) {
+    console.error('[Viva.AI] TAB_SWITCH error:', error);
+    throw new Error(`TAB_SWITCH failed: ${error.message}`);
+  }
+}
+
+// Execute NAVIGATE action
+async function executeNavigate(tabId, action) {
+  try {
+    debugLog('Executing NAVIGATE:', action.value);
+
+    if (!action.value) {
+      throw new Error('NAVIGATE requires a URL value');
+    }
+
+    // Validate URL
+    let url;
+    try {
+      url = new URL(action.value, 'https://');
+    } catch (e) {
+      // Try as search query if not valid URL
+      url = new URL(`https://www.google.com/search?q=${encodeURIComponent(action.value)}`);
+    }
+
+    // Navigate the tab
+    await chrome.tabs.update(tabId, { url: url.href });
+
+    debugLog('Navigated to:', url.href);
+
+    return {
+      success: true,
+      executed: true,
+      type: 'NAVIGATE',
+      url: url.href
+    };
+  } catch (error) {
+    console.error('[Viva.AI] NAVIGATE error:', error);
+    throw new Error(`NAVIGATE failed: ${error.message}`);
+  }
+}
+
+// Execute entire plan with multiple actions
+async function executePlan(tabId, plan, language = 'az') {
+  try {
+    debugLog('Executing plan with', plan.actions.length, 'actions');
+    debugLog('Plan:', JSON.stringify(plan, null, 2));
+
+    const results = [];
+
+    for (const action of plan.actions) {
+      const result = await executeActionOnTab(tabId, action, language);
+      results.push(result);
+
+      // Stop execution if action failed or requires confirmation
+      if (!result.success || result.requiresConfirmation) {
+        debugLog('Stopping plan execution:', result.requiresConfirmation ? 'requires confirmation' : 'action failed');
+        break;
+      }
+
+      // Small delay between actions for safety
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+
+    return {
+      success: true,
+      results,
+      executed: results.filter(r => r.success).length,
+      total: plan.actions.length
+    };
+  } catch (error) {
+    console.error('[Viva.AI] Error executing plan:', error);
+    debugLog('Plan execution error:', error.message);
     return { success: false, error: error.message };
   }
 }
