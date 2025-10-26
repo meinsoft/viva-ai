@@ -17,9 +17,9 @@ export async function processWithGemini(prompt) {
     throw new Error('GEMINI_API_KEY not configured');
   }
 
-  // Use stable model name (avoid -latest suffix which may 404)
-  const model = 'models/gemini-2.0-flash-exp';
-  const endpoint = `https://generativelanguage.googleapis.com/v1/${model}:generateContent`;
+  // Use gemini-2.5-flash model
+  const model = 'models/gemini-2.5-flash';
+  const endpoint = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent`;
 
   try {
     const response = await fetch(endpoint, {

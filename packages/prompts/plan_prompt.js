@@ -55,10 +55,10 @@ CRITICAL RULES:
 4. For SAFE actions (SCROLL_TO, ANNOUNCE, SUMMARIZE, DESCRIBE):
    - Set "confirmation": false
 5. For SCROLL_TO actions:
-   - "target" is OPTIONAL
-   - If user mentioned specific element → use "target": { "selector": "#element" }
-   - If NO specific element → omit target OR use "target": { "selector": "body" }
-   - Implementation will default to viewport scroll if no target
+   - If intent is "interact_scroll" and NO specific element mentioned in utterance → ALWAYS use "target": { "selector": "body" }
+   - If user mentioned specific element (e.g., "scroll to comments") → use "target": { "selector": "#comments" }
+   - NEVER omit target for scroll actions — always include "target": { "selector": "body" } as fallback
+   - Examples of generic scroll requests: "scroll down", "scroll up", "aşağı keç", "yukarı keç", "roll down" → ALL use body selector
 6. "speak" field is REQUIRED — max 1 sentence for TTS
 7. "confidence" field is REQUIRED — float 0.0 to 1.0
 8. If unclear or unsafe — return empty actions array with speak explaining why
