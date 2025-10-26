@@ -224,7 +224,7 @@ function isValidPlan(plan) {
   }
 
   // Validate each action
-  const validActionTypes = ['SCROLL_TO', 'CLICK', 'SUMMARIZE', 'DESCRIBE', 'ANNOUNCE', 'FILL', 'NAVIGATE', 'TAB_SWITCH'];
+  const validActionTypes = ['SCROLL_TO', 'CLICK', 'SUMMARIZE', 'DESCRIBE', 'ANNOUNCE', 'FILL', 'NAVIGATE', 'TAB_SWITCH', 'SEARCH', 'ANSWER_QUESTION', 'YOUTUBE_SEARCH', 'YOUTUBE_SELECT', 'YOUTUBE_CONTROL'];
 
   for (const action of plan.actions) {
     if (!action.type || !validActionTypes.includes(action.type)) {
@@ -257,6 +257,16 @@ async function executeActionOnTab(tabId, action, language = 'az') {
       return await executeNavigate(tabId, action);
     }
 
+    // Handle SEARCH - requires chrome.tabs API (background only)
+    if (action.type === 'SEARCH') {
+      return await executeSearch(tabId, action);
+    }
+
+    // Handle YOUTUBE_SEARCH - requires chrome.tabs API (background only)
+    if (action.type === 'YOUTUBE_SEARCH') {
+      return await executeYouTubeSearch(tabId, action);
+    }
+
     // Send other actions to content script for execution
     const result = await chrome.tabs.sendMessage(tabId, {
       type: 'EXECUTE_ACTION',
@@ -273,7 +283,74 @@ async function executeActionOnTab(tabId, action, language = 'az') {
   }
 }
 
-// Fuzzy match score for tab switching (0-100)
+// Phonetic similarity for speech recognition errors (e.g., "get up" → "github")
+function phoneticSimilarity(str1, str2) {
+  // Remove spaces and special characters for phonetic comparison
+  const clean1 = str1.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const clean2 = str2.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  // Common speech recognition patterns
+  const patterns = [
+    // "get up" → "github"
+    { spoken: 'getup', written: 'github' },
+    { spoken: 'git hub', written: 'github' },
+    // "you tube" → "youtube"
+    { spoken: 'youtoo', written: 'youtube' },
+    { spoken: 'youtube', written: 'youtube' },
+    // "slack" variations
+    { spoken: 'slak', written: 'slack' },
+    // "chrome" variations
+    { spoken: 'krome', written: 'chrome' }
+  ];
+
+  for (const pattern of patterns) {
+    if (clean1.includes(pattern.spoken) && clean2.includes(pattern.written)) {
+      return 95;
+    }
+    if (clean1.includes(pattern.written) && clean2.includes(pattern.spoken)) {
+      return 95;
+    }
+  }
+
+  // Levenshtein distance for phonetic similarity
+  const maxLen = Math.max(clean1.length, clean2.length);
+  if (maxLen === 0) return 0;
+
+  const distance = levenshteinDistance(clean1, clean2);
+  const similarity = ((maxLen - distance) / maxLen) * 100;
+
+  return similarity;
+}
+
+// Levenshtein distance for edit distance calculation
+function levenshteinDistance(str1, str2) {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix = [];
+
+  for (let i = 0; i <= len1; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= len2; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return matrix[len1][len2];
+}
+
+// Enhanced fuzzy match score with phonetic awareness (0-100)
 function fuzzyMatchScore(query, text) {
   if (!text) return 0;
 
@@ -287,7 +364,11 @@ function fuzzyMatchScore(query, text) {
   if (textLower.startsWith(queryLower)) return 90;
 
   // Contains exact substring
-  if (textLower.includes(queryLower)) return 80;
+  if (textLower.includes(queryLower)) return 85;
+
+  // Phonetic similarity check (for speech recognition errors)
+  const phoneticScore = phoneticSimilarity(queryLower, textLower);
+  if (phoneticScore > 80) return phoneticScore;
 
   // Word boundary match
   const words = queryLower.split(/\s+/);
@@ -308,7 +389,7 @@ function fuzzyMatchScore(query, text) {
   }
   const fuzzyScore = (matches / queryLower.length) * 40;
 
-  return fuzzyScore;
+  return Math.max(fuzzyScore, phoneticScore * 0.5);
 }
 
 // Execute TAB_SWITCH action with smart fuzzy matching
@@ -471,6 +552,68 @@ async function executeNavigate(tabId, action) {
   } catch (error) {
     console.error('[Viva.AI] NAVIGATE error:', error);
     throw new Error(`NAVIGATE failed: ${error.message}`);
+  }
+}
+
+// Execute SEARCH action - perform web search and navigate to results
+async function executeSearch(tabId, action) {
+  try {
+    debugLog('Executing SEARCH:', action.value);
+
+    if (!action.value) {
+      throw new Error('SEARCH requires a search query value');
+    }
+
+    // Perform Google search by navigating to search results
+    const searchQuery = encodeURIComponent(action.value);
+    const searchURL = `https://www.google.com/search?q=${searchQuery}`;
+
+    // Navigate the tab to search results
+    await chrome.tabs.update(tabId, { url: searchURL });
+
+    debugLog('Search performed:', action.value);
+
+    return {
+      success: true,
+      executed: true,
+      type: 'SEARCH',
+      query: action.value,
+      url: searchURL
+    };
+  } catch (error) {
+    console.error('[Viva.AI] SEARCH error:', error);
+    throw new Error(`SEARCH failed: ${error.message}`);
+  }
+}
+
+// Execute YOUTUBE_SEARCH action - search YouTube and navigate to results
+async function executeYouTubeSearch(tabId, action) {
+  try {
+    debugLog('Executing YOUTUBE_SEARCH:', action.value);
+
+    if (!action.value) {
+      throw new Error('YOUTUBE_SEARCH requires a search query value');
+    }
+
+    // Perform YouTube search by navigating to search results
+    const searchQuery = encodeURIComponent(action.value);
+    const youtubeSearchURL = `https://www.youtube.com/results?search_query=${searchQuery}`;
+
+    // Navigate the tab to YouTube search results
+    await chrome.tabs.update(tabId, { url: youtubeSearchURL });
+
+    debugLog('YouTube search performed:', action.value);
+
+    return {
+      success: true,
+      executed: true,
+      type: 'YOUTUBE_SEARCH',
+      query: action.value,
+      url: youtubeSearchURL
+    };
+  } catch (error) {
+    console.error('[Viva.AI] YOUTUBE_SEARCH error:', error);
+    throw new Error(`YOUTUBE_SEARCH failed: ${error.message}`);
   }
 }
 

@@ -8,7 +8,12 @@ export const actionTypes = [
   'ANNOUNCE',
   'FILL',
   'NAVIGATE',
-  'TAB_SWITCH'
+  'TAB_SWITCH',
+  'SEARCH',
+  'ANSWER_QUESTION',
+  'YOUTUBE_SEARCH',
+  'YOUTUBE_SELECT',
+  'YOUTUBE_CONTROL'
 ];
 
 export const planSchema = {

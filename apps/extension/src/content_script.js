@@ -257,10 +257,21 @@ function executeAction(action, language = 'az') {
         return executeAnnounce(action, language);
 
       case 'SUMMARIZE':
+        return executeSummarize(action, language);
+
       case 'DESCRIBE':
         // These are informational actions, return success
         debugLog('Informational action completed:', action.type);
         return { executed: true, type: action.type, message: 'Informational action completed' };
+
+      case 'ANSWER_QUESTION':
+        return executeAnswerQuestion(action, language);
+
+      case 'YOUTUBE_CONTROL':
+        return executeYouTubeControl(action);
+
+      case 'YOUTUBE_SELECT':
+        return executeYouTubeSelect(action);
 
       case 'NAVIGATE':
         // NAVIGATE should be handled by background.js (requires tab API)
@@ -271,6 +282,16 @@ function executeAction(action, language = 'az') {
         // TAB_SWITCH must be handled by background.js (requires tabs API)
         debugLog('TAB_SWITCH action passed to background');
         return { executed: false, type: 'TAB_SWITCH', message: 'Tab switch handled by background script' };
+
+      case 'SEARCH':
+        // SEARCH handled by background.js (requires tabs API)
+        debugLog('SEARCH action passed to background');
+        return { executed: false, type: 'SEARCH', message: 'Search handled by background script' };
+
+      case 'YOUTUBE_SEARCH':
+        // YOUTUBE_SEARCH handled by background.js (requires tabs API)
+        debugLog('YOUTUBE_SEARCH action passed to background');
+        return { executed: false, type: 'YOUTUBE_SEARCH', message: 'YouTube search handled by background script' };
 
       default:
         throw new Error(`Unknown action type: ${action.type}`);
@@ -379,24 +400,20 @@ function executeFill(action) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 tags for TTS (TOP LANGUAGES ONLY)
-// Unsupported languages automatically fallback to English
+// Map ISO 639-1 language codes to BCP 47 tags for TTS (TOP 3 LANGUAGES ONLY)
+// Only English, Spanish, French supported - all others use English
 function mapLanguageToVoice(isoCode) {
-  const topLanguages = {
-    'en': 'en-US',  // English
-    'tr': 'tr-TR',  // Turkish
-    'ru': 'ru-RU',  // Russian
-    'es': 'es-ES',  // Spanish
-    'fr': 'fr-FR',  // French
-    'de': 'de-DE'   // German
+  const supportedLanguages = {
+    'en': 'en-US',
+    'es': 'es-ES',
+    'fr': 'fr-FR'
   };
 
-  // If supported, use it; otherwise fallback to English
-  if (topLanguages[isoCode]) {
-    return topLanguages[isoCode];
+  if (supportedLanguages[isoCode]) {
+    return supportedLanguages[isoCode];
   }
 
-  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  debugLog('Unsupported TTS language:', isoCode, '→ using English');
   return 'en-US';
 }
 
@@ -434,6 +451,208 @@ function executeAnnounce(action, language = 'az') {
   } catch (error) {
     throw new Error(`ANNOUNCE failed: ${error.message}`);
   }
+}
+
+// SUMMARIZE: Extract page content and generate summary
+function executeSummarize(action, language = 'en') {
+  try {
+    debugLog('Executing SUMMARIZE');
+
+    // Extract main content from the page
+    const pageContent = extractPageContent();
+
+    if (!pageContent || pageContent.length === 0) {
+      throw new Error('No content found to summarize');
+    }
+
+    debugLog('Extracted content for summarization:', pageContent.substring(0, 200) + '...');
+
+    // Return the extracted content - backend will handle AI summarization
+    return {
+      executed: true,
+      type: 'SUMMARIZE',
+      content: pageContent,
+      message: 'Content extracted for summarization'
+    };
+  } catch (error) {
+    throw new Error(`SUMMARIZE failed: ${error.message}`);
+  }
+}
+
+// ANSWER_QUESTION: Answer question about current page content
+function executeAnswerQuestion(action, language = 'en') {
+  try {
+    debugLog('Executing ANSWER_QUESTION:', action.value);
+
+    if (!action.value) {
+      throw new Error('ANSWER_QUESTION requires a question value');
+    }
+
+    // Extract page content for context
+    const pageContent = extractPageContent();
+
+    if (!pageContent || pageContent.length === 0) {
+      throw new Error('No page content available to answer question');
+    }
+
+    debugLog('Extracted content for Q&A:', pageContent.substring(0, 200) + '...');
+
+    // Return question and content - backend will handle AI response
+    return {
+      executed: true,
+      type: 'ANSWER_QUESTION',
+      question: action.value,
+      content: pageContent,
+      message: 'Question and content extracted for AI processing'
+    };
+  } catch (error) {
+    throw new Error(`ANSWER_QUESTION failed: ${error.message}`);
+  }
+}
+
+// YOUTUBE_CONTROL: Control YouTube video playback
+function executeYouTubeControl(action) {
+  try {
+    debugLog('Executing YOUTUBE_CONTROL:', action.value);
+
+    if (!action.value) {
+      throw new Error('YOUTUBE_CONTROL requires a control value (play, pause, next, previous)');
+    }
+
+    const control = action.value.toLowerCase();
+
+    // Check if we're on YouTube
+    if (!window.location.hostname.includes('youtube.com')) {
+      throw new Error('YOUTUBE_CONTROL only works on YouTube pages');
+    }
+
+    // Get the video element
+    const video = document.querySelector('video');
+    if (!video) {
+      throw new Error('No video element found on page');
+    }
+
+    switch (control) {
+      case 'play':
+        video.play();
+        debugLog('Video playing');
+        return { executed: true, type: 'YOUTUBE_CONTROL', action: 'play' };
+
+      case 'pause':
+        video.pause();
+        debugLog('Video paused');
+        return { executed: true, type: 'YOUTUBE_CONTROL', action: 'pause' };
+
+      case 'next':
+        // Click the next button in playlist
+        const nextButton = document.querySelector('.ytp-next-button');
+        if (nextButton) {
+          nextButton.click();
+          debugLog('Next video clicked');
+          return { executed: true, type: 'YOUTUBE_CONTROL', action: 'next' };
+        } else {
+          throw new Error('Next button not found (may not be in a playlist)');
+        }
+
+      case 'previous':
+        // Click the previous button in playlist
+        const prevButton = document.querySelector('.ytp-prev-button');
+        if (prevButton) {
+          prevButton.click();
+          debugLog('Previous video clicked');
+          return { executed: true, type: 'YOUTUBE_CONTROL', action: 'previous' };
+        } else {
+          throw new Error('Previous button not found (may not be in a playlist)');
+        }
+
+      default:
+        throw new Error(`Unknown YouTube control: ${control} (use: play, pause, next, previous)`);
+    }
+  } catch (error) {
+    throw new Error(`YOUTUBE_CONTROL failed: ${error.message}`);
+  }
+}
+
+// YOUTUBE_SELECT: Select a specific video from YouTube search results
+function executeYouTubeSelect(action) {
+  try {
+    debugLog('Executing YOUTUBE_SELECT:', action.value);
+
+    // Check if we're on YouTube
+    if (!window.location.hostname.includes('youtube.com')) {
+      throw new Error('YOUTUBE_SELECT only works on YouTube pages');
+    }
+
+    // Get video results on the page
+    const videoLinks = document.querySelectorAll('a#video-title');
+
+    if (!videoLinks || videoLinks.length === 0) {
+      throw new Error('No video results found on page');
+    }
+
+    // Default to first video if no specific selection criteria
+    let selectedIndex = 0;
+
+    // If action.value is a number, use it as index
+    if (action.value && !isNaN(action.value)) {
+      selectedIndex = parseInt(action.value) - 1; // Convert 1-based to 0-based
+      if (selectedIndex < 0 || selectedIndex >= videoLinks.length) {
+        selectedIndex = 0; // Fallback to first video
+      }
+    }
+
+    // Click the selected video
+    const selectedVideo = videoLinks[selectedIndex];
+    selectedVideo.click();
+
+    debugLog('Selected video:', selectedIndex + 1, selectedVideo.title);
+
+    return {
+      executed: true,
+      type: 'YOUTUBE_SELECT',
+      index: selectedIndex + 1,
+      title: selectedVideo.title
+    };
+  } catch (error) {
+    throw new Error(`YOUTUBE_SELECT failed: ${error.message}`);
+  }
+}
+
+// Extract main content from the page for summarization/Q&A
+function extractPageContent() {
+  let content = '';
+
+  // Try to find main article/content area
+  const mainContent = document.querySelector('article, main, [role="main"], .content, #content');
+
+  if (mainContent) {
+    // Extract text from paragraphs, headings, and list items
+    const elements = mainContent.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li');
+    elements.forEach(el => {
+      const text = el.textContent.trim();
+      if (text && text.length > 10) { // Skip very short text
+        content += text + '\n\n';
+      }
+    });
+  }
+
+  // Fallback: extract from body if no main content found
+  if (!content) {
+    const paragraphs = document.querySelectorAll('p');
+    paragraphs.forEach(p => {
+      const text = p.textContent.trim();
+      if (text && text.length > 10) {
+        content += text + '\n\n';
+      }
+    });
+  }
+
+  // Limit content size (max ~5000 chars for AI processing)
+  if (content.length > 5000) {
+    content = content.substring(0, 5000) + '...';
+  }
+
+  return content.trim();
 }
 
 // Initialize - build pageMap on load for faster responses

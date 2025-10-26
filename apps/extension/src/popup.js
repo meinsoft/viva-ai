@@ -1,4 +1,6 @@
-// Viva.AI Popup Script - Voice Input & Plan Execution
+// Viva.AI Popup Script - Autonomous Cognitive Agent Interface
+
+import { sessionMemory } from './memory.js';
 
 // Diagnostics mode helper
 function isDiagnosticsEnabled() {
@@ -15,8 +17,8 @@ function debugLog(...args) {
   }
 }
 
-console.log('[Viva.AI] Popup loaded');
-debugLog('Diagnostics mode active');
+console.log('[Viva.AI] Autonomous Cognitive Mode - ACTIVE');
+debugLog('J.A.R.V.I.S-like intelligence enabled');
 
 const BACKEND_URL = 'http://localhost:5000';
 
@@ -94,19 +96,24 @@ async function processUtterance(utterance) {
     debugLog('Processing utterance:', utterance);
 
     // STAGE 0: Get pageMap from content script
-    updateStatus('Reading page...');
+    updateStatus('Analyzing...');
     try {
       const pageMapResponse = await chrome.tabs.sendMessage(tab.id, { type: 'GET_PAGE_CONTEXT' });
       currentPageMap = pageMapResponse.pageMap;
+      sessionMemory.updatePageContext(currentPageMap);
       debugLog('PageMap received:', currentPageMap);
     } catch (error) {
       console.warn('[Viva.AI] Could not get pageMap:', error.message);
       currentPageMap = {};
     }
 
-    // STAGE 1: Classify intent
+    // Get memory context for cognitive understanding
+    const memoryContext = sessionMemory.getRelevantContext();
+    debugLog('Memory context:', memoryContext);
+
+    // STAGE 1: Classify intent with autonomous cognitive understanding
     updateStatus('Understanding...');
-    debugLog('Calling /ai/intent');
+    debugLog('Calling /ai/intent with memory context');
 
     const intentResponse = await fetch(`${BACKEND_URL}/ai/intent`, {
       method: 'POST',
@@ -114,8 +121,8 @@ async function processUtterance(utterance) {
       body: JSON.stringify({
         utterance: utterance,
         pageMap: currentPageMap,
-        memory: {},
-        locale: 'az'
+        memory: memoryContext,
+        locale: 'en'
       })
     });
 
@@ -184,6 +191,15 @@ async function processUtterance(utterance) {
       updateStatus('Action completed');
     }
 
+    // Update session memory with conversation turn
+    sessionMemory.addConversationTurn(utterance, intent, plan.speak);
+    debugLog('Memory updated with conversation turn');
+
+    // Update last action in memory
+    if (plan.actions && plan.actions.length > 0) {
+      sessionMemory.updateLastAction(plan.actions[plan.actions.length - 1], executeResult);
+    }
+
     if (!executeResult.success) {
       console.warn('[Viva.AI] Some actions failed:', executeResult.error);
     }
@@ -195,29 +211,26 @@ async function processUtterance(utterance) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 for TTS (TOP LANGUAGES ONLY)
-// Unsupported languages fallback to English automatically
+// Map ISO 639-1 language codes to BCP 47 for TTS (TOP 3 LANGUAGES ONLY)
+// Only English, Spanish, French supported
 function mapLanguageToVoice(isoCode) {
-  const topLanguages = {
+  const supportedLanguages = {
     'en': 'en-US',
-    'tr': 'tr-TR',
-    'ru': 'ru-RU',
     'es': 'es-ES',
-    'fr': 'fr-FR',
-    'de': 'de-DE'
+    'fr': 'fr-FR'
   };
 
-  // If language is supported, use it; otherwise fallback to English
-  if (topLanguages[isoCode]) {
-    return topLanguages[isoCode];
+  // Always fallback to English if not supported
+  if (supportedLanguages[isoCode]) {
+    return supportedLanguages[isoCode];
   }
 
-  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  debugLog('Unsupported TTS language:', isoCode, '→ using English');
   return 'en-US';
 }
 
-// Speak text using Web Speech API TTS
-function speakText(text, language = 'az') {
+// Speak text using Web Speech API TTS with optimized natural voice
+function speakText(text, language = 'en') {
   try {
     if (!window.speechSynthesis) {
       console.warn('[Viva.AI] Speech synthesis not available');
@@ -230,9 +243,23 @@ function speakText(text, language = 'az') {
     const voiceLang = mapLanguageToVoice(language);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = voiceLang;
-    utterance.rate = 1.0;
+
+    // Optimize for more natural-sounding speech
+    utterance.rate = 0.95; // Slightly slower for clarity
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
+
+    // Try to select a better quality voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(voice =>
+      voice.lang.startsWith(language) &&
+      (voice.name.includes('Google') || voice.name.includes('Natural') || voice.name.includes('Premium'))
+    );
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      debugLog('Using premium voice:', preferredVoice.name);
+    }
 
     debugLog('Speaking in', voiceLang, ':', text);
     window.speechSynthesis.speak(utterance);
