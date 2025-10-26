@@ -27,8 +27,65 @@ function buildPageMap() {
       images: [],
       firstParagraph: null,
       url: window.location.href,
-      title: document.title
+      title: document.title,
+      pageType: 'general',
+      metadata: {}
     };
+
+    // Detect page type and extract specialized metadata
+    const url = window.location.href;
+
+    // YouTube video page detection
+    if (url.includes('youtube.com/watch')) {
+      pageMap.pageType = 'youtube_video';
+
+      // Extract video title
+      const videoTitle = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, h1.title');
+      if (videoTitle) {
+        pageMap.metadata.videoTitle = videoTitle.textContent.trim();
+      }
+
+      // Extract channel name
+      const channelName = document.querySelector('ytd-channel-name a, #channel-name a, #owner-name a');
+      if (channelName) {
+        pageMap.metadata.channel = channelName.textContent.trim();
+      }
+
+      // Extract view count and upload date
+      const viewInfo = document.querySelector('#info-strings yt-formatted-string, #count');
+      if (viewInfo) {
+        pageMap.metadata.viewInfo = viewInfo.textContent.trim();
+      }
+
+      // Extract description preview
+      const description = document.querySelector('#description yt-formatted-string, #description-text');
+      if (description) {
+        pageMap.metadata.description = description.textContent.trim().substring(0, 300);
+      }
+
+      debugLog('YouTube video detected:', pageMap.metadata);
+    }
+
+    // Article/blog page detection
+    if (document.querySelector('article, [role="article"], .post-content, .article-content, .entry-content')) {
+      pageMap.pageType = 'article';
+
+      // Extract article content for summarization
+      const articleElement = document.querySelector('article, [role="article"], .post-content, .article-content, .entry-content');
+      if (articleElement) {
+        const paragraphs = articleElement.querySelectorAll('p');
+        const contentPreviews = Array.from(paragraphs).slice(0, 5).map(p => p.textContent.trim()).filter(t => t.length > 50);
+        pageMap.metadata.contentPreview = contentPreviews.join(' ').substring(0, 500);
+      }
+
+      // Extract author if available
+      const author = document.querySelector('[rel="author"], .author-name, .byline');
+      if (author) {
+        pageMap.metadata.author = author.textContent.trim();
+      }
+
+      debugLog('Article page detected:', pageMap.metadata);
+    }
 
     // Extract h1-h3 headings
     document.querySelectorAll('h1, h2, h3').forEach((heading, index) => {
@@ -227,22 +284,31 @@ function executeAction(action, language = 'az') {
 // SCROLL_TO: Scroll to a specific element or position
 function executeScrollTo(action) {
   try {
-    if (action.target && action.target.selector) {
-      // Scroll to specific element
+    // If specific selector provided, try to scroll to element
+    if (action.target && action.target.selector && action.target.selector !== 'body') {
       const element = document.querySelector(action.target.selector);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        debugLog('Scrolled to element:', action.target.selector);
         return { executed: true, type: 'SCROLL_TO', target: action.target.selector };
-      } else {
-        throw new Error(`Element not found: ${action.target.selector}`);
       }
-    } else {
-      // Scroll down by viewport height
-      window.scrollBy({ top: window.innerHeight * 0.8, behavior: 'smooth' });
-      return { executed: true, type: 'SCROLL_TO', scrolled: 'down' };
+      // Element not found, fallback to viewport scroll
+      debugLog('Element not found, falling back to viewport scroll:', action.target.selector);
     }
+
+    // Default: smooth scroll down by viewport height
+    const scrollAmount = window.innerHeight * 0.8;
+    window.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+    debugLog('Viewport scrolled by:', scrollAmount);
+    return { executed: true, type: 'SCROLL_TO', scrolled: 'viewport', amount: scrollAmount };
   } catch (error) {
-    throw new Error(`SCROLL_TO failed: ${error.message}`);
+    // Fatal failure, try emergency fallback
+    try {
+      window.scrollBy(0, window.innerHeight * 0.8);
+      return { executed: true, type: 'SCROLL_TO', scrolled: 'fallback' };
+    } catch (fallbackError) {
+      throw new Error(`SCROLL_TO failed: ${error.message}`);
+    }
   }
 }
 
@@ -313,32 +379,25 @@ function executeFill(action) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 tags for TTS
+// Map ISO 639-1 language codes to BCP 47 tags for TTS (TOP LANGUAGES ONLY)
+// Unsupported languages automatically fallback to English
 function mapLanguageToVoice(isoCode) {
-  const languageMap = {
-    'az': 'az-AZ',  // Azerbaijani
+  const topLanguages = {
     'en': 'en-US',  // English
     'tr': 'tr-TR',  // Turkish
     'ru': 'ru-RU',  // Russian
     'es': 'es-ES',  // Spanish
-    'ar': 'ar-SA',  // Arabic
     'fr': 'fr-FR',  // French
-    'de': 'de-DE',  // German
-    'ja': 'ja-JP',  // Japanese
-    'zh': 'zh-CN',  // Chinese
-    'hi': 'hi-IN',  // Hindi
-    'it': 'it-IT',  // Italian
-    'pt': 'pt-PT',  // Portuguese
-    'ko': 'ko-KR',  // Korean
-    'nl': 'nl-NL',  // Dutch
-    'pl': 'pl-PL',  // Polish
-    'sv': 'sv-SE',  // Swedish
-    'da': 'da-DK',  // Danish
-    'fi': 'fi-FI',  // Finnish
-    'no': 'no-NO'   // Norwegian
+    'de': 'de-DE'   // German
   };
 
-  return languageMap[isoCode] || 'en-US'; // Default to English
+  // If supported, use it; otherwise fallback to English
+  if (topLanguages[isoCode]) {
+    return topLanguages[isoCode];
+  }
+
+  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  return 'en-US';
 }
 
 // ANNOUNCE: Use SpeechSynthesis to speak text with language awareness

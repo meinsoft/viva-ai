@@ -195,15 +195,25 @@ async function processUtterance(utterance) {
   }
 }
 
-// Map ISO 639-1 language codes to BCP 47 for TTS
+// Map ISO 639-1 language codes to BCP 47 for TTS (TOP LANGUAGES ONLY)
+// Unsupported languages fallback to English automatically
 function mapLanguageToVoice(isoCode) {
-  const map = {
-    'az': 'az-AZ', 'en': 'en-US', 'tr': 'tr-TR', 'ru': 'ru-RU',
-    'es': 'es-ES', 'ar': 'ar-SA', 'fr': 'fr-FR', 'de': 'de-DE',
-    'ja': 'ja-JP', 'zh': 'zh-CN', 'hi': 'hi-IN', 'it': 'it-IT',
-    'pt': 'pt-PT', 'ko': 'ko-KR', 'nl': 'nl-NL', 'pl': 'pl-PL'
+  const topLanguages = {
+    'en': 'en-US',
+    'tr': 'tr-TR',
+    'ru': 'ru-RU',
+    'es': 'es-ES',
+    'fr': 'fr-FR',
+    'de': 'de-DE'
   };
-  return map[isoCode] || 'en-US';
+
+  // If language is supported, use it; otherwise fallback to English
+  if (topLanguages[isoCode]) {
+    return topLanguages[isoCode];
+  }
+
+  debugLog('Unsupported TTS language:', isoCode, '→ falling back to en-US');
+  return 'en-US';
 }
 
 // Speak text using Web Speech API TTS
