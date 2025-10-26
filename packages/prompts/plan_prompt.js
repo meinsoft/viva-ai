@@ -80,7 +80,7 @@ You MUST return ONLY raw JSON with this EXACT structure:
 {
   "actions": [
     {
-      "type": "SCROLL_TO" | "CLICK" | "FILL" | "NAVIGATE" | "TAB_SWITCH" | "ANNOUNCE" | "SUMMARIZE" | "DESCRIBE",
+      "type": "SCROLL_TO" | "CLICK" | "FILL" | "NAVIGATE" | "TAB_SWITCH" | "ANNOUNCE" | "SUMMARIZE" | "DESCRIBE" | "SEARCH" | "ANSWER_QUESTION" | "YOUTUBE_SEARCH" | "YOUTUBE_SELECT" | "YOUTUBE_CONTROL",
       "confirmation": true | false,
       "target": { "selector": "..." },
       "value": "..."
@@ -117,13 +117,18 @@ CRITICAL RULES:
 ACTION TYPE DETAILS:
 
 - SCROLL_TO: Scroll page (target optional; if omitted → viewport scroll; if present → scroll to element)
-- CLICK: Click element (needs target.selector, confirmation: true)
-- FILL: Fill input/textarea (needs target.selector + value, confirmation: true)
-- NAVIGATE: Go to URL (needs value as URL, confirmation: true)
-- TAB_SWITCH: Switch to existing tab (needs value as {by:"title"|"url", query:"..."}, confirmation: true)
+- CLICK: Click element (needs target.selector, confirmation: false)
+- FILL: Fill input/textarea (needs target.selector + value, confirmation: false)
+- NAVIGATE: Go to URL (needs value as URL/domain name, confirmation: false)
+- TAB_SWITCH: Switch to existing tab (needs value as tab name/domain, confirmation: false)
 - ANNOUNCE: Speak text via TTS (needs value, confirmation: false) — USE FOR ALL INFORMATIONAL RESPONSES
-- SUMMARIZE: Extract/summarize content (optional value for summary text)
-- DESCRIBE: Describe visual/image (optional value for description)
+- SUMMARIZE: Extract and summarize current page content, then ANNOUNCE it (no value needed, generates summary automatically)
+- DESCRIBE: Describe visual/image on page (optional value for description)
+- SEARCH: Perform web search and navigate to best result (needs value as search query, confirmation: false)
+- ANSWER_QUESTION: Answer question about current page content (needs value containing question context, confirmation: false)
+- YOUTUBE_SEARCH: Search YouTube for videos (needs value as search query, confirmation: false)
+- YOUTUBE_SELECT: Select specific video from YouTube search results (needs value as selection criteria, confirmation: false)
+- YOUTUBE_CONTROL: Control YouTube video playback (needs value: "play"|"pause"|"next"|"previous", confirmation: false)
 
 ---
 
@@ -167,6 +172,56 @@ Output:
   ],
   "speak": "Got it, switching to your GitHub tab",
   "confidence": 0.91
+}
+
+Input: { "intent": "search", "utterance": "search for how to grow carrots at home" }
+Output:
+{
+  "actions": [
+    { "type": "SEARCH", "confirmation": false, "value": "how to grow carrots at home" }
+  ],
+  "speak": "Sure, searching for how to grow carrots at home",
+  "confidence": 0.93
+}
+
+Input: { "intent": "summarize", "utterance": "summarize this page", "pageMap": { "pageType": "article", "metadata": { "title": "Gardening Tips" } } }
+Output:
+{
+  "actions": [
+    { "type": "SUMMARIZE", "confirmation": false }
+  ],
+  "speak": "Okay, let me summarize this article for you",
+  "confidence": 0.94
+}
+
+Input: { "intent": "answer_question", "utterance": "how do I water them", "pageMap": { "pageType": "article", "metadata": { "contentPreview": "Carrots need consistent watering..." } } }
+Output:
+{
+  "actions": [
+    { "type": "ANSWER_QUESTION", "confirmation": false, "value": "how do I water them" }
+  ],
+  "speak": "Let me find that information for you",
+  "confidence": 0.89
+}
+
+Input: { "intent": "youtube_search", "utterance": "search YouTube for Python lessons" }
+Output:
+{
+  "actions": [
+    { "type": "YOUTUBE_SEARCH", "confirmation": false, "value": "Python lessons" }
+  ],
+  "speak": "Okay, searching YouTube for Python lessons",
+  "confidence": 0.92
+}
+
+Input: { "intent": "youtube_control", "utterance": "play the video", "pageMap": { "pageType": "youtube_video" } }
+Output:
+{
+  "actions": [
+    { "type": "YOUTUBE_CONTROL", "confirmation": false, "value": "play" }
+  ],
+  "speak": "Sure, playing the video now",
+  "confidence": 0.95
 }
 
 ---
