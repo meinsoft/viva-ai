@@ -39,7 +39,18 @@ INTENT TYPES:
 - "interact_scroll" → user wants to SCROLL or MOVE view
 - "interact_fill"   → user wants to TYPE / ENTER text into a form or input
 - "navigate"        → user wants to GO TO a different URL or page
-- "unknown"         → unclear or ambiguous request
+- "unknown"         → ONLY use if truly unclear (NOT for scroll/click/fill requests)
+
+SCROLL INTENT RULES (CRITICAL):
+- Natural scroll requests MUST map to "interact_scroll" with confidence > 0.9
+- Examples that are ALWAYS interact_scroll:
+  * "scroll", "scroll down", "scroll up"
+  * "make it go lower", "make it go higher"
+  * "aşağı", "yuxarı", "aşağı sürüşdür", "yuxarı sürüşdür"
+  * "sayfa indir", "sayfa kaldır"
+  * "下にスクロール", "arriba", "вниз"
+  * Any phrase meaning "move the page view"
+- NEVER return "unknown" for these — always "interact_scroll"
 
 ---
 
@@ -69,11 +80,23 @@ Output:
 
 Input: { "utterance": "Scroll down" }
 Output:
-{ "intent": "interact_scroll", "language": "en", "confidence": 0.95 }
+{ "intent": "interact_scroll", "language": "en", "confidence": 0.96 }
+
+Input: { "utterance": "make it go lower" }
+Output:
+{ "intent": "interact_scroll", "language": "en", "confidence": 0.93 }
+
+Input: { "utterance": "aşağı sürüşdür" }
+Output:
+{ "intent": "interact_scroll", "language": "az", "confidence": 0.95 }
+
+Input: { "utterance": "sayfa indir" }
+Output:
+{ "intent": "interact_scroll", "language": "tr", "confidence": 0.94 }
 
 Input: { "utterance": "подними страницу вниз" }
 Output:
-{ "intent": "interact_scroll", "language": "ru", "confidence": 0.91 }
+{ "intent": "interact_scroll", "language": "ru", "confidence": 0.92 }
 
 Input: { "utterance": "Makalenin en önemli noktasını özetle" }
 Output:
