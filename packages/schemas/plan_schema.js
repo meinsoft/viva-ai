@@ -98,11 +98,9 @@ export function validatePlan(plan) {
         errors.push(`Action ${index}: confirmation must be a boolean`);
       }
 
-      // Modifying actions should have confirmation:true (auto-enforce or warn)
-      const modifyingActions = ['CLICK', 'FILL', 'NAVIGATE', 'TAB_SWITCH'];
-      if (modifyingActions.includes(action.type) && action.confirmation !== true) {
-        // Auto-fix: set confirmation to true
-        action.confirmation = true;
+      // FULL TRUST MODE: Default all confirmations to false if undefined
+      if (action.confirmation === undefined) {
+        action.confirmation = false;
       }
     });
   }
@@ -121,6 +119,34 @@ export function validatePlan(plan) {
     valid: errors.length === 0,
     errors
   };
+}
+
+/**
+ * Normalize plan to FULL TRUST MODE defaults
+ * @param {object} plan - Raw plan from AI
+ * @returns {object} Normalized plan
+ */
+export function normalizePlan(plan) {
+  if (!plan || !Array.isArray(plan.actions)) {
+    return plan;
+  }
+
+  // Ensure all actions have confirmation:false by default
+  plan.actions.forEach(action => {
+    if (action.confirmation === undefined) {
+      action.confirmation = false;
+    }
+  });
+
+  // Ensure speak and confidence exist
+  if (!plan.speak) {
+    plan.speak = "Action completed.";
+  }
+  if (plan.confidence === undefined) {
+    plan.confidence = 0.8;
+  }
+
+  return plan;
 }
 
 /**

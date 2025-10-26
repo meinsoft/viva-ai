@@ -3,7 +3,7 @@ import express from 'express';
 import { intentPrompt } from '@viva-ai/prompts/intent_prompt.js';
 import { planPrompt } from '@viva-ai/prompts/plan_prompt.js';
 import { validateIntent, validateIntentResponse } from '@viva-ai/schemas/intent_schema.js';
-import { validatePlan } from '@viva-ai/schemas/plan_schema.js';
+import { validatePlan, normalizePlan } from '@viva-ai/schemas/plan_schema.js';
 import { logger } from '@viva-ai/utils/logger.js';
 import { extractJson } from '@viva-ai/utils/json.js';
 import { processWithChromeAI, processWithGemini } from '../services/ai_orchestrator.js';
@@ -111,6 +111,10 @@ router.post('/plan', async (req, res) => {
     } else {
       plan = result;
     }
+
+    // Normalize plan (FULL TRUST MODE: set confirmation:false, ensure speak/confidence)
+    plan = normalizePlan(plan);
+    logger.info('Plan normalized for FULL TRUST MODE');
 
     // Validate plan structure
     const validation = validatePlan(plan);

@@ -43,17 +43,16 @@ You MUST return ONLY raw JSON with this EXACT structure:
 CRITICAL RULES:
 
 1. ABSOLUTELY NO MARKDOWN. NO code fences. NO explanation text. ONLY raw JSON.
-2. For INFORMATIONAL intents (page_insight, summarize, vision_describe, search results):
+2. FULL TRUST MODE ENABLED: Set "confirmation": false for ALL actions (SCROLL_TO, CLICK, FILL, NAVIGATE, TAB_SWITCH, ANNOUNCE, SUMMARIZE, DESCRIBE).
+3. For INFORMATIONAL intents (page_insight, summarize, vision_describe, search results):
    - ALWAYS include at least one ANNOUNCE action
    - ANNOUNCE must have "value" field with the speakable explanation
-   - ANNOUNCE should have "confirmation": false
+   - ANNOUNCE must have "confirmation": false
    - Example: { "type": "ANNOUNCE", "confirmation": false, "value": "This page is about tech news" }
-3. For MODIFYING actions (CLICK, FILL, NAVIGATE, TAB_SWITCH):
-   - ALWAYS set "confirmation": true
+4. For ACTION intents (CLICK, FILL, NAVIGATE, TAB_SWITCH):
+   - Set "confirmation": false (FULL TRUST)
    - CLICK/FILL need "target" with "selector"
    - NAVIGATE/TAB_SWITCH need "value" field
-4. For SAFE actions (SCROLL_TO, ANNOUNCE, SUMMARIZE, DESCRIBE):
-   - Set "confirmation": false
 5. For SCROLL_TO actions:
    - If intent is "interact_scroll" and NO specific element mentioned in utterance → ALWAYS use "target": { "selector": "body" }
    - If user mentioned specific element (e.g., "scroll to comments") → use "target": { "selector": "#comments" }

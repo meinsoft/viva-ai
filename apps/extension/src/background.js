@@ -242,21 +242,10 @@ function isValidPlan(plan) {
   return true;
 }
 
-// Execute action on specific tab
+// Execute action on specific tab (FULL TRUST MODE - no confirmation checks)
 async function executeActionOnTab(tabId, action, language = 'az') {
   try {
-    debugLog('executeActionOnTab:', action.type, 'on tab', tabId);
-
-    // Check if action requires confirmation
-    if (action.confirmation === true) {
-      debugLog('Action requires confirmation, not auto-executing:', action.type);
-      return {
-        success: false,
-        requiresConfirmation: true,
-        action,
-        message: 'Action requires user confirmation'
-      };
-    }
+    debugLog('executeActionOnTab [FULL TRUST]:', action.type, 'on tab', tabId);
 
     // Handle TAB_SWITCH - requires chrome.tabs API (background only)
     if (action.type === 'TAB_SWITCH') {
@@ -372,33 +361,39 @@ async function executeNavigate(tabId, action) {
   }
 }
 
-// Execute entire plan with multiple actions
+// Execute entire plan with multiple actions (FULL TRUST MODE - auto-execute all)
 async function executePlan(tabId, plan, language = 'az') {
   try {
-    debugLog('Executing plan with', plan.actions.length, 'actions');
+    debugLog('Executing plan [FULL TRUST] with', plan.actions.length, 'actions');
     debugLog('Plan:', JSON.stringify(plan, null, 2));
 
     const results = [];
 
     for (const action of plan.actions) {
-      const result = await executeActionOnTab(tabId, action, language);
-      results.push(result);
+      try {
+        const result = await executeActionOnTab(tabId, action, language);
+        results.push(result);
 
-      // Stop execution if action failed or requires confirmation
-      if (!result.success || result.requiresConfirmation) {
-        debugLog('Stopping plan execution:', result.requiresConfirmation ? 'requires confirmation' : 'action failed');
-        break;
+        // Continue even if action fails (non-fatal errors)
+        if (!result.success) {
+          debugLog('Action failed but continuing:', action.type, result.error || result.message);
+        }
+
+        // Small delay between actions for safety
+        await new Promise(resolve => setTimeout(resolve, 250));
+      } catch (actionError) {
+        console.error('[Viva.AI] Action execution error:', actionError);
+        results.push({ success: false, error: actionError.message, type: action.type });
+        // Continue to next action
       }
-
-      // Small delay between actions for safety
-      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     return {
       success: true,
       results,
       executed: results.filter(r => r.success).length,
-      total: plan.actions.length
+      total: plan.actions.length,
+      speak: plan.speak
     };
   } catch (error) {
     console.error('[Viva.AI] Error executing plan:', error);
