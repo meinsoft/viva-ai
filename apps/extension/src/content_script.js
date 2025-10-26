@@ -162,35 +162,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const action = message.action;
     const language = message.language || 'az'; // Default to Azerbaijani
 
-    debugLog('Executing action:', action.type, 'with language:', language);
+    debugLog('Executing action [FULL TRUST]:', action.type, 'with language:', language);
 
-    // Check if action requires confirmation
-    if (action.confirmation === true) {
-      debugLog('Action requires confirmation:', action.type);
-      // Require user confirmation before executing
-      requireConfirmation(
-        () => executeAction(action, language),
-        action.value || action.type || 'Execute AI-generated action'
-      ).then(result => {
-        if (result) {
-          debugLog('Action confirmed and executed:', action.type);
-          sendResponse({ success: true, result });
-        } else {
-          debugLog('Action cancelled by user:', action.type);
-          sendResponse({ success: false, cancelled: true, message: 'User cancelled action' });
-        }
-      });
-    } else {
-      // Execute immediately without confirmation
-      try {
-        const result = executeAction(action, language);
-        debugLog('Action executed immediately:', action.type, result);
-        sendResponse({ success: true, result });
-      } catch (error) {
-        console.error('[Viva.AI] Error executing action:', error);
-        debugLog('Action execution error:', action.type, error.message);
-        sendResponse({ success: false, error: error.message });
-      }
+    // FULL TRUST MODE: Execute all actions immediately without confirmation
+    try {
+      const result = executeAction(action, language);
+      debugLog('Action executed:', action.type, result);
+      sendResponse({ success: true, result });
+    } catch (error) {
+      console.error('[Viva.AI] Error executing action:', error);
+      debugLog('Action execution error:', action.type, error.message);
+      sendResponse({ success: false, error: error.message });
     }
 
     return true; // Keep channel open for async response

@@ -162,23 +162,9 @@ async function processUtterance(utterance) {
     const plan = planResult.plan;
     debugLog('Plan:', JSON.stringify(plan, null, 2));
 
-    // STAGE 3: Check for confirmation requirements
-    const actionsNeedingConfirmation = plan.actions.filter(a => a.confirmation === true);
-
-    if (actionsNeedingConfirmation.length > 0) {
-      debugLog('Actions requiring confirmation:', actionsNeedingConfirmation.length);
-      const confirmed = await showConfirmationUI(plan, actionsNeedingConfirmation);
-
-      if (!confirmed) {
-        updateStatus('Action cancelled');
-        debugLog('User cancelled confirmation');
-        return;
-      }
-    }
-
-    // STAGE 4: Execute plan
+    // STAGE 3: Execute plan immediately (FULL TRUST MODE - no confirmation)
     updateStatus('Executing...');
-    debugLog('Executing plan');
+    debugLog('Executing plan [FULL TRUST]');
 
     const executeResult = await chrome.runtime.sendMessage({
       type: 'EXECUTE_PLAN',
@@ -189,11 +175,17 @@ async function processUtterance(utterance) {
 
     debugLog('Execute result:', executeResult);
 
-    if (executeResult.success) {
+    // STAGE 4: Always speak back (TTS)
+    if (plan.speak) {
+      speakText(plan.speak, language);
       updateStatus(`✓ ${plan.speak}`);
-      debugLog(`Executed ${executeResult.executed}/${executeResult.total} actions`);
+      debugLog(`Executed ${executeResult.executed || 0}/${executeResult.total || plan.actions.length} actions`);
     } else {
-      updateStatus(`Error: ${executeResult.error}`);
+      updateStatus('Action completed');
+    }
+
+    if (!executeResult.success) {
+      console.warn('[Viva.AI] Some actions failed:', executeResult.error);
     }
 
   } catch (error) {
@@ -203,26 +195,40 @@ async function processUtterance(utterance) {
   }
 }
 
-// Show confirmation UI for actions requiring user approval
-async function showConfirmationUI(plan, actionsNeedingConfirmation) {
-  const actionDescriptions = actionsNeedingConfirmation.map(a => {
-    switch (a.type) {
-      case 'CLICK':
-        return `Click: ${a.target?.selector || 'element'}`;
-      case 'FILL':
-        return `Fill: ${a.target?.selector || 'input'} with "${a.value}"`;
-      case 'NAVIGATE':
-        return `Navigate to: ${a.value}`;
-      case 'TAB_SWITCH':
-        return `Switch to tab: ${a.value}`;
-      default:
-        return `${a.type}: ${a.value || ''}`;
+// Map ISO 639-1 language codes to BCP 47 for TTS
+function mapLanguageToVoice(isoCode) {
+  const map = {
+    'az': 'az-AZ', 'en': 'en-US', 'tr': 'tr-TR', 'ru': 'ru-RU',
+    'es': 'es-ES', 'ar': 'ar-SA', 'fr': 'fr-FR', 'de': 'de-DE',
+    'ja': 'ja-JP', 'zh': 'zh-CN', 'hi': 'hi-IN', 'it': 'it-IT',
+    'pt': 'pt-PT', 'ko': 'ko-KR', 'nl': 'nl-NL', 'pl': 'pl-PL'
+  };
+  return map[isoCode] || 'en-US';
+}
+
+// Speak text using Web Speech API TTS
+function speakText(text, language = 'az') {
+  try {
+    if (!window.speechSynthesis) {
+      console.warn('[Viva.AI] Speech synthesis not available');
+      return;
     }
-  }).join('\n');
 
-  const message = `[Viva.AI SAFE MODE]\n\n${plan.speak}\n\nActions to perform:\n${actionDescriptions}\n\nAllow?`;
+    // Cancel any ongoing speech
+    window.speechSynthesis.cancel();
 
-  return confirm(message);
+    const voiceLang = mapLanguageToVoice(language);
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voiceLang;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    debugLog('Speaking in', voiceLang, ':', text);
+    window.speechSynthesis.speak(utterance);
+  } catch (error) {
+    console.error('[Viva.AI] TTS error:', error);
+  }
 }
 
 // Start listening on button click
