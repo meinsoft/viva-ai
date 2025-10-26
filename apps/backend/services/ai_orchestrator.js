@@ -19,7 +19,7 @@ export async function processWithGemini(prompt) {
 
   // Use gemini-2.5-flash model
   const model = 'models/gemini-2.5-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1/${model}:generateContent`;
 
   try {
     const response = await fetch(endpoint, {
