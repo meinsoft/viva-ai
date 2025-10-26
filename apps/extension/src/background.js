@@ -69,7 +69,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Send intent to backend for AI processing
-async function processIntent(utterance, pageMap, memory = {}, locale = 'az') {
+async function processIntent(utterance, pageMap, memory = {}, locale = 'en') {
   try {
     const response = await fetch(`${BACKEND_URL}/ai/intent`, {
       method: 'POST',
@@ -243,7 +243,7 @@ function isValidPlan(plan) {
 }
 
 // Execute action on specific tab (FULL TRUST MODE - no confirmation checks)
-async function executeActionOnTab(tabId, action, language = 'az') {
+async function executeActionOnTab(tabId, action, language = 'en') {
   try {
     debugLog('executeActionOnTab [FULL TRUST]:', action.type, 'on tab', tabId);
 
@@ -618,7 +618,7 @@ async function executeYouTubeSearch(tabId, action) {
 }
 
 // Execute entire plan with multiple actions (FULL TRUST MODE - auto-execute all)
-async function executePlan(tabId, plan, language = 'az') {
+async function executePlan(tabId, plan, language = 'en') {
   try {
     debugLog('Executing plan [FULL TRUST] with', plan.actions.length, 'actions');
     debugLog('Plan:', JSON.stringify(plan, null, 2));

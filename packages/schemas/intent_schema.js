@@ -78,11 +78,15 @@ export function validateIntentResponse(response) {
     'search',
     'summarize',
     'vision_describe',
+    'answer_question',
     'interact_click',
     'interact_scroll',
     'interact_fill',
     'navigate',
     'tab_switch',
+    'youtube_search',
+    'youtube_control',
+    'continue',
     'unknown'
   ];
 
