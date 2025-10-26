@@ -217,7 +217,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'EXECUTE_ACTION') {
     const action = message.action;
-    const language = message.language || 'az'; // Default to Azerbaijani
+    const language = message.language || 'en'; // Default to English
 
     debugLog('Executing action [FULL TRUST]:', action.type, 'with language:', language);
 
@@ -239,7 +239,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Execute DOM actions safely
-function executeAction(action, language = 'az') {
+function executeAction(action, language = 'en') {
   debugLog('executeAction called:', action.type);
 
   try {
@@ -418,7 +418,7 @@ function mapLanguageToVoice(isoCode) {
 }
 
 // ANNOUNCE: Use SpeechSynthesis to speak text with language awareness
-function executeAnnounce(action, language = 'az') {
+function executeAnnounce(action, language = 'en') {
   try {
     if (!action.value) {
       throw new Error('ANNOUNCE action requires a value');

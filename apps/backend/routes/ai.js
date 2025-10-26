@@ -124,7 +124,7 @@ router.post('/plan', async (req, res) => {
     }
 
     // Inject ANNOUNCE action if informational intent without one
-    const informationalIntents = ['page_insight', 'summarize', 'vision_describe', 'search'];
+    const informationalIntents = ['page_insight', 'summarize', 'vision_describe', 'search', 'answer_question', 'youtube_search'];
     if (informationalIntents.includes(intent)) {
       const hasAnnounce = plan.actions.some(a => a.type === 'ANNOUNCE');
       if (!hasAnnounce && plan.speak) {
