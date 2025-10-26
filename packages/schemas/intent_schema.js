@@ -82,6 +82,7 @@ export function validateIntentResponse(response) {
     'interact_scroll',
     'interact_fill',
     'navigate',
+    'tab_switch',
     'unknown'
   ];
 

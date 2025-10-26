@@ -7,7 +7,8 @@ export const actionTypes = [
   'DESCRIBE',
   'ANNOUNCE',
   'FILL',
-  'NAVIGATE'
+  'NAVIGATE',
+  'TAB_SWITCH'
 ];
 
 export const planSchema = {
@@ -82,14 +83,26 @@ export function validatePlan(plan) {
         errors.push(`Action ${index}: ${action.type} requires a value`);
       }
 
-      // Actions that target elements should have a target
-      if (['SCROLL_TO', 'CLICK', 'FILL'].includes(action.type) && !action.target) {
+      // NAVIGATE and TAB_SWITCH require a value
+      if (['NAVIGATE', 'TAB_SWITCH'].includes(action.type) && !action.value) {
+        errors.push(`Action ${index}: ${action.type} requires a value`);
+      }
+
+      // CLICK and FILL require a target (SCROLL_TO is optional)
+      if (['CLICK', 'FILL'].includes(action.type) && !action.target) {
         errors.push(`Action ${index}: ${action.type} requires a target`);
       }
 
       // Confirmation should be boolean if present
       if (action.confirmation !== undefined && typeof action.confirmation !== 'boolean') {
         errors.push(`Action ${index}: confirmation must be a boolean`);
+      }
+
+      // Modifying actions should have confirmation:true (auto-enforce or warn)
+      const modifyingActions = ['CLICK', 'FILL', 'NAVIGATE', 'TAB_SWITCH'];
+      if (modifyingActions.includes(action.type) && action.confirmation !== true) {
+        // Auto-fix: set confirmation to true
+        action.confirmation = true;
       }
     });
   }

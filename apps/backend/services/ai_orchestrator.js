@@ -17,14 +17,16 @@ export async function processWithGemini(prompt) {
     throw new Error('GEMINI_API_KEY not configured');
   }
 
-  const model = 'gemini-1.5-flash-latest';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  // Use stable model name (avoid -latest suffix which may 404)
+  const model = 'models/gemini-2.0-flash-exp';
+  const endpoint = `https://generativelanguage.googleapis.com/v1/${model}:generateContent`;
 
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'x-goog-api-key': GEMINI_API_KEY
       },
       body: JSON.stringify({
         contents: [

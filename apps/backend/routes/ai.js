@@ -5,6 +5,7 @@ import { planPrompt } from '@viva-ai/prompts/plan_prompt.js';
 import { validateIntent, validateIntentResponse } from '@viva-ai/schemas/intent_schema.js';
 import { validatePlan } from '@viva-ai/schemas/plan_schema.js';
 import { logger } from '@viva-ai/utils/logger.js';
+import { extractJson } from '@viva-ai/utils/json.js';
 import { processWithChromeAI, processWithGemini } from '../services/ai_orchestrator.js';
 
 const router = express.Router();
@@ -36,13 +37,16 @@ router.post('/intent', async (req, res) => {
       logger.info('Processed with Gemini API');
     }
 
-    // Parse the AI response (should be JSON)
+    // Parse the AI response (use extractJson to handle markdown fences)
     let intentResponse;
-    try {
-      intentResponse = typeof result.text === 'string' ? JSON.parse(result.text) : result;
-    } catch (parseError) {
-      logger.error('Failed to parse AI intent response:', parseError);
-      return res.status(500).json({ error: 'Invalid intent format from AI', details: parseError.message });
+    if (typeof result.text === 'string') {
+      intentResponse = extractJson(result.text);
+      if (!intentResponse) {
+        logger.error('Failed to extract JSON from AI intent response:', result.text);
+        return res.status(500).json({ error: 'Invalid intent format from AI (no JSON found)' });
+      }
+    } else {
+      intentResponse = result;
     }
 
     // Validate intent response structure
@@ -96,13 +100,16 @@ router.post('/plan', async (req, res) => {
       logger.info('Plan generated with Gemini API');
     }
 
-    // Parse the AI response (should be JSON)
+    // Parse the AI response (use extractJson to handle markdown fences)
     let plan;
-    try {
-      plan = typeof result.text === 'string' ? JSON.parse(result.text) : result;
-    } catch (parseError) {
-      logger.error('Failed to parse AI plan response:', parseError);
-      return res.status(500).json({ error: 'Invalid plan format from AI', details: parseError.message });
+    if (typeof result.text === 'string') {
+      plan = extractJson(result.text);
+      if (!plan) {
+        logger.error('Failed to extract JSON from AI plan response:', result.text);
+        return res.status(500).json({ error: 'Invalid plan format from AI (no JSON found)' });
+      }
+    } else {
+      plan = result;
     }
 
     // Validate plan structure
@@ -110,6 +117,21 @@ router.post('/plan', async (req, res) => {
     if (!validation.valid) {
       logger.error('Invalid plan structure:', validation.errors);
       return res.status(500).json({ error: 'AI generated invalid plan', details: validation.errors });
+    }
+
+    // Inject ANNOUNCE action if informational intent without one
+    const informationalIntents = ['page_insight', 'summarize', 'vision_describe', 'search'];
+    if (informationalIntents.includes(intent)) {
+      const hasAnnounce = plan.actions.some(a => a.type === 'ANNOUNCE');
+      if (!hasAnnounce && plan.speak) {
+        // Auto-inject ANNOUNCE using speak field
+        plan.actions.unshift({
+          type: 'ANNOUNCE',
+          confirmation: false,
+          value: plan.speak
+        });
+        logger.info('Auto-injected ANNOUNCE action for informational intent');
+      }
     }
 
     res.json({

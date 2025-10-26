@@ -7,6 +7,7 @@
     "./http.js": "./http.js",
     "./logger.js": "./logger.js",
     "./selectors.js": "./selectors.js",
-    "./safety.js": "./safety.js"
+    "./safety.js": "./safety.js",
+    "./json.js": "./json.js"
   }
 }
