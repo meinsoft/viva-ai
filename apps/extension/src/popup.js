@@ -229,8 +229,8 @@ function mapLanguageToVoice(isoCode) {
   return 'en-US';
 }
 
-// Speak text using Web Speech API TTS
-function speakText(text, language = 'az') {
+// Speak text using Web Speech API TTS with optimized natural voice
+function speakText(text, language = 'en') {
   try {
     if (!window.speechSynthesis) {
       console.warn('[Viva.AI] Speech synthesis not available');
@@ -243,9 +243,23 @@ function speakText(text, language = 'az') {
     const voiceLang = mapLanguageToVoice(language);
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = voiceLang;
-    utterance.rate = 1.0;
+
+    // Optimize for more natural-sounding speech
+    utterance.rate = 0.95; // Slightly slower for clarity
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
+
+    // Try to select a better quality voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(voice =>
+      voice.lang.startsWith(language) &&
+      (voice.name.includes('Google') || voice.name.includes('Natural') || voice.name.includes('Premium'))
+    );
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      debugLog('Using premium voice:', preferredVoice.name);
+    }
 
     debugLog('Speaking in', voiceLang, ':', text);
     window.speechSynthesis.speak(utterance);

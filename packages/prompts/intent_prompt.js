@@ -116,7 +116,7 @@ NOW PROCESS THE INPUT AND RETURN ONLY THE RAW JSON INTENT. DO NOT USE MARKDOWN C
  * @param {string} locale - User language (az, en, tr, etc.)
  * @returns {string} Formatted prompt for AI processing
  */
-export function intentPrompt(utterance, pageMap = {}, memory = {}, locale = 'az') {
+export function intentPrompt(utterance, pageMap = {}, memory = {}, locale = 'en') {
   const contextData = JSON.stringify({
     utterance,
     pageMap,
