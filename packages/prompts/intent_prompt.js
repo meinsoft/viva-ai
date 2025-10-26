@@ -39,7 +39,8 @@ INTENT TYPES:
 - "interact_scroll" → user wants to SCROLL or MOVE view
 - "interact_fill"   → user wants to TYPE / ENTER text into a form or input
 - "navigate"        → user wants to GO TO a different URL or page
-- "unknown"         → ONLY use if truly unclear (NOT for scroll/click/fill requests)
+- "tab_switch"      → user wants to SWITCH TO a different browser tab
+- "unknown"         → ONLY use if truly unclear (NOT for scroll/click/fill/navigate/tab requests)
 
 SCROLL INTENT RULES (CRITICAL):
 - Natural scroll requests MUST map to "interact_scroll" with confidence > 0.9
