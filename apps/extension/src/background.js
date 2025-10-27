@@ -20,6 +20,148 @@ debugLog('Diagnostics mode enabled');
 
 const BACKEND_URL = 'http://localhost:5000';
 
+// ===== PERSISTENT MEMORY SYSTEM =====
+// Long-term memory storage for eternal recall
+
+class PersistentMemory {
+  constructor() {
+    this.storageKey = 'viva_persistent_memory';
+    this.indexKey = 'viva_memory_index';
+  }
+
+  async saveArticle(articleData) {
+    try {
+      const { url, title, summary, content, timestamp } = articleData;
+      if (!url || !title || !summary) return { success: false, error: 'Missing fields' };
+
+      const memoryEntry = {
+        type: 'article',
+        id: this.generateId(url),
+        url,
+        title,
+        summary,
+        contentPreview: content ? content.substring(0, 500) : '',
+        timestamp: timestamp || Date.now(),
+        keywords: this.extractKeywords(title + ' ' + summary)
+      };
+
+      const memories = await this.getMemories();
+      memories.push(memoryEntry);
+      await chrome.storage.local.set({ [this.storageKey]: memories });
+      await this.updateIndex(memoryEntry);
+
+      console.log('[PersistentMemory] Article saved:', title);
+      return { success: true, id: memoryEntry.id };
+    } catch (error) {
+      console.error('[PersistentMemory] Error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async saveQA(qaData) {
+    try {
+      const { question, answer, url, title, context, timestamp } = qaData;
+      if (!question || !answer) return { success: false, error: 'Missing Q/A' };
+
+      const memoryEntry = {
+        type: 'qa',
+        id: this.generateId(question + Date.now()),
+        question,
+        answer,
+        url: url || 'unknown',
+        title: title || 'Unknown page',
+        context: context ? context.substring(0, 300) : '',
+        timestamp: timestamp || Date.now(),
+        keywords: this.extractKeywords(question + ' ' + answer)
+      };
+
+      const memories = await this.getMemories();
+      memories.push(memoryEntry);
+      await chrome.storage.local.set({ [this.storageKey]: memories });
+      await this.updateIndex(memoryEntry);
+
+      console.log('[PersistentMemory] Q&A saved:', question);
+      return { success: true, id: memoryEntry.id };
+    } catch (error) {
+      console.error('[PersistentMemory] Error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async searchMemories(query) {
+    try {
+      const memories = await this.getMemories();
+      if (!query || query.trim().length === 0) {
+        return memories.slice(-20).reverse();
+      }
+
+      const queryKeywords = this.extractKeywords(query);
+      const queryLower = query.toLowerCase();
+
+      const scored = memories.map(memory => {
+        let score = 0;
+        if (memory.title && memory.title.toLowerCase().includes(queryLower)) score += 50;
+        if (memory.question && memory.question.toLowerCase().includes(queryLower)) score += 50;
+        if (memory.summary && memory.summary.toLowerCase().includes(queryLower)) score += 30;
+        if (memory.answer && memory.answer.toLowerCase().includes(queryLower)) score += 30;
+        if (memory.keywords) {
+          for (const keyword of queryKeywords) {
+            if (memory.keywords.includes(keyword)) score += 10;
+          }
+        }
+        const age = Date.now() - (memory.timestamp || 0);
+        const recencyScore = Math.max(0, 20 - (age / (1000 * 60 * 60 * 24)));
+        score += recencyScore;
+        return { ...memory, score };
+      });
+
+      const matches = scored.filter(m => m.score > 0).sort((a, b) => b.score - a.score).slice(0, 10);
+      console.log('[PersistentMemory] Found', matches.length, 'matches');
+      return matches;
+    } catch (error) {
+      console.error('[PersistentMemory] Search error:', error);
+      return [];
+    }
+  }
+
+  async getMemories() {
+    try {
+      const result = await chrome.storage.local.get([this.storageKey]);
+      return result[this.storageKey] || [];
+    } catch (error) {
+      console.error('[PersistentMemory] Get error:', error);
+      return [];
+    }
+  }
+
+  extractKeywords(text) {
+    if (!text) return [];
+    const stopWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'what', 'which', 'who', 'when', 'where', 'why', 'how']);
+    const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(word => word.length > 2 && !stopWords.has(word));
+    return [...new Set(words)];
+  }
+
+  async updateIndex(entry) {
+    try {
+      const result = await chrome.storage.local.get([this.indexKey]);
+      const index = result[this.indexKey] || {};
+      for (const keyword of entry.keywords) {
+        if (!index[keyword]) index[keyword] = [];
+        index[keyword].push(entry.id);
+      }
+      await chrome.storage.local.set({ [this.indexKey]: index });
+    } catch (error) {
+      console.error('[PersistentMemory] Index error:', error);
+    }
+  }
+
+  generateId(seed) {
+    return seed.replace(/[^a-z0-9]/gi, '_').substring(0, 50) + '_' + Date.now();
+  }
+}
+
+const persistentMemory = new PersistentMemory();
+
 // Handle extension icon click
 chrome.action.onClicked.addListener(async (tab) => {
   console.log('[Viva.AI] Extension icon clicked on tab:', tab.id);
@@ -63,6 +205,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(result => sendResponse(result))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep channel open for async response
+  }
+
+  if (message.type === 'SAVE_SUMMARY_MEMORY') {
+    persistentMemory.saveArticle(message.data)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (message.type === 'SAVE_QA_MEMORY') {
+    persistentMemory.saveQA(message.data)
+      .then(result => sendResponse(result))
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
+  }
+
+  if (message.type === 'SEARCH_MEMORIES') {
+    persistentMemory.searchMemories(message.query)
+      .then(results => sendResponse({ success: true, results }))
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
   }
 
   return false;

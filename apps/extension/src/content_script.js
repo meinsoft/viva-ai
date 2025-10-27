@@ -510,6 +510,23 @@ async function executeSummarize(action, language = 'en') {
     // Speak the summary using TTS
     speakText(result.summary, language);
 
+    // Save to persistent memory for eternal recall
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_SUMMARY_MEMORY',
+        data: {
+          url: window.location.href,
+          title: document.title,
+          summary: result.summary,
+          content: pageContent,
+          timestamp: Date.now()
+        }
+      });
+      debugLog('Summary saved to persistent memory');
+    } catch (memError) {
+      console.warn('[Viva.AI] Failed to save summary to memory:', memError);
+    }
+
     return {
       executed: true,
       type: 'SUMMARIZE',
@@ -567,6 +584,24 @@ async function executeAnswerQuestion(action, language = 'en') {
 
     // Speak the answer using TTS
     speakText(result.answer, language);
+
+    // Save Q&A to persistent memory for eternal recall
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_QA_MEMORY',
+        data: {
+          question: action.value,
+          answer: result.answer,
+          url: window.location.href,
+          title: document.title,
+          context: pageContent.substring(0, 300),
+          timestamp: Date.now()
+        }
+      });
+      debugLog('Q&A saved to persistent memory');
+    } catch (memError) {
+      console.warn('[Viva.AI] Failed to save Q&A to memory:', memError);
+    }
 
     return {
       executed: true,
