@@ -10,6 +10,129 @@ import { processWithChromeAI, processWithGemini } from '../services/ai_orchestra
 
 const router = express.Router();
 
+// POST /ai/clarify - Conversational AI layer that thinks before acting
+router.post('/clarify', async (req, res) => {
+  try {
+    const { utterance, pageMap, memory, locale } = req.body;
+
+    logger.info('Conversational AI analyzing:', { utterance, locale });
+
+    if (!utterance || typeof utterance !== 'string' || utterance.trim().length === 0) {
+      return res.status(400).json({ error: 'Utterance is required' });
+    }
+
+    // Build conversational analysis prompt
+    const prompt = `You are Viva.AI, an intelligent conversational assistant for blind and visually impaired users.
+
+Your job is to THINK BEFORE ACTING. Analyze if the user's request makes sense and if you need clarification.
+
+**CONTEXT:**
+- User said: "${utterance}"
+- Current page: ${pageMap?.title || 'Unknown page'}
+- Page URL: ${pageMap?.url || 'Unknown'}
+- Page type: ${pageMap?.pageType || 'general'}
+- Recent conversation: ${memory?.recentConversation ? JSON.stringify(memory.recentConversation.slice(-3)) : 'None'}
+
+**YOUR TASK:**
+Analyze if this utterance is:
+1. CLEAR - Makes complete sense, you know exactly what to do
+2. VAGUE - Somewhat unclear, but you can infer the intent with reasonable confidence
+3. UNCLEAR - Confusing or nonsensical, needs clarification
+
+**DECISION RULES:**
+
+CLEAR (confidence >= 0.8):
+- Specific commands: "scroll down", "summarize this page", "search for how to grow carrots"
+- Navigation: "go to youtube", "open instagram"
+- Clear questions: "what is this article about?", "how do I water plants?"
+- YouTube controls: "play the video", "pause", "next video"
+
+VAGUE (confidence 0.5-0.8):
+- Generic searches that might be incomplete: "search for it", "find that"
+- Pronouns without clear antecedent: "open it", "tell me about this"
+- Partial commands: "search", "find"
+
+UNCLEAR (confidence < 0.5):
+- Nonsensical: "asdfgh", "blah blah", random words
+- Incomplete fragments: "how to", "I want"
+- Recognition errors that don't make sense in context
+- Too vague to act on: "do something", "help me"
+
+**OUTPUT FORMAT:**
+Return ONLY raw JSON:
+{
+  "clarity": "clear" | "vague" | "unclear",
+  "confidence": 0.0-1.0,
+  "inferredIntent": "brief description of what you think they want",
+  "needsClarification": true | false,
+  "clarificationQuestion": "What do you want me to search for?" (only if needsClarification is true),
+  "reasoning": "brief explanation of your analysis"
+}
+
+**EXAMPLES:**
+
+Input: "search for how to grow carrots at home"
+Output: {"clarity":"clear","confidence":0.95,"inferredIntent":"User wants to perform web search for carrot growing instructions","needsClarification":false,"clarificationQuestion":null,"reasoning":"Specific search query with clear intent"}
+
+Input: "search for it"
+Output: {"clarity":"vague","confidence":0.6,"inferredIntent":"User wants to search but subject is unclear from context","needsClarification":true,"clarificationQuestion":"What would you like me to search for?","reasoning":"Pronoun 'it' has no clear antecedent in recent conversation"}
+
+Input: "blah blah something"
+Output: {"clarity":"unclear","confidence":0.2,"inferredIntent":"Unclear speech recognition or random input","needsClarification":true,"clarificationQuestion":"I didn't understand that. Could you please repeat what you'd like me to do?","reasoning":"Utterance appears nonsensical or is speech recognition error"}
+
+Input: "summarize this page"
+Output: {"clarity":"clear","confidence":0.98,"inferredIntent":"User wants AI summary of current page content","needsClarification":false,"clarificationQuestion":null,"reasoning":"Clear command with specific action"}
+
+NOW ANALYZE THIS INPUT AND RETURN ONLY RAW JSON:`;
+
+    // Use Gemini to analyze
+    const result = await processWithGemini(prompt);
+
+    let analysis;
+    if (typeof result.text === 'string') {
+      analysis = extractJson(result.text);
+      if (!analysis) {
+        logger.error('Failed to extract JSON from clarify response:', result.text);
+        // Fallback: assume clear
+        analysis = {
+          clarity: 'clear',
+          confidence: 0.7,
+          inferredIntent: 'Proceeding with user request',
+          needsClarification: false,
+          clarificationQuestion: null,
+          reasoning: 'AI analysis failed, assuming clear intent'
+        };
+      }
+    } else {
+      throw new Error('Invalid AI response format');
+    }
+
+    logger.info('Conversational analysis result:', analysis);
+
+    res.json({
+      success: true,
+      analysis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error in conversational AI:', error);
+    // Fallback: assume clear to avoid blocking user
+    res.json({
+      success: true,
+      analysis: {
+        clarity: 'clear',
+        confidence: 0.7,
+        inferredIntent: 'Proceeding with user request',
+        needsClarification: false,
+        clarificationQuestion: null,
+        reasoning: 'Error in analysis, proceeding anyway'
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // POST /ai/intent - Process user intent with AI orchestration
 router.post('/intent', async (req, res) => {
   try {
@@ -266,6 +389,92 @@ ${content}
   } catch (error) {
     logger.error('Error generating answer:', error);
     res.status(500).json({ error: 'Failed to generate answer', message: error.message });
+  }
+});
+
+// POST /ai/search-analyze - Intelligent search that analyzes and recommends results
+router.post('/search-analyze', async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    logger.info('Intelligent search for:', { query });
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    // Note: In production, you'd actually scrape Google results here
+    // For now, we'll simulate intelligent search analysis
+    // TODO: Add actual Google search scraping using a service or API
+
+    const prompt = `You are Viva.AI, an intelligent search assistant for blind users.
+
+The user wants to search for: "${query}"
+
+**YOUR TASK:**
+1. Analyze this search query
+2. Predict what kind of sources would be most helpful
+3. Recommend search strategy
+
+**OUTPUT FORMAT:**
+Return ONLY raw JSON:
+{
+  "analysis": "brief analysis of what user is looking for",
+  "recommendedSourceTypes": ["article", "tutorial", "video", "documentation"],
+  "searchRefinements": ["alternative search term 1", "alternative search term 2"],
+  "expectedResultCount": "estimated number like '10-50'",
+  "voiceAnnouncement": "What you will say to the user about the search"
+}
+
+**EXAMPLE:**
+
+Input: "how to grow carrots at home"
+Output: {
+  "analysis": "User wants practical gardening instructions for growing carrots in a home setting",
+  "recommendedSourceTypes": ["tutorial", "article", "video"],
+  "searchRefinements": ["beginner carrot growing guide", "home vegetable gardening carrots"],
+  "expectedResultCount": "20-30",
+  "voiceAnnouncement": "I found several helpful guides on growing carrots at home. I see tutorials from gardening websites, step-by-step articles, and instructional videos. Would you like me to open the top-rated beginner's guide?"
+}
+
+NOW ANALYZE THIS QUERY AND RETURN ONLY RAW JSON:`;
+
+    // Use Gemini to analyze search
+    const result = await processWithGemini(prompt);
+
+    let searchAnalysis;
+    if (typeof result.text === 'string') {
+      searchAnalysis = extractJson(result.text);
+      if (!searchAnalysis) {
+        logger.error('Failed to extract JSON from search analysis:', result.text);
+        searchAnalysis = {
+          analysis: `Searching for: ${query}`,
+          recommendedSourceTypes: ['article', 'website'],
+          searchRefinements: [],
+          expectedResultCount: '10-20',
+          voiceAnnouncement: `I'll search for ${query} and find the best results for you.`
+        };
+      }
+    } else {
+      throw new Error('Invalid AI response format');
+    }
+
+    logger.info('Search analysis complete:', searchAnalysis);
+
+    // Generate search URL
+    const searchURL = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+
+    res.json({
+      success: true,
+      query,
+      searchURL,
+      analysis: searchAnalysis,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error analyzing search:', error);
+    res.status(500).json({ error: 'Failed to analyze search', message: error.message });
   }
 });
 
