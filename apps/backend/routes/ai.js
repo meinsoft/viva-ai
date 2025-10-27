@@ -7,6 +7,7 @@ import { validatePlan, normalizePlan } from '@viva-ai/schemas/plan_schema.js';
 import { logger } from '@viva-ai/utils/logger.js';
 import { extractJson } from '@viva-ai/utils/json.js';
 import { processWithChromeAI, processWithGemini } from '../services/ai_orchestrator.js';
+import { persistentMemory } from '@viva-ai/storage/persistent_memory.js';
 
 const router = express.Router();
 
@@ -21,10 +22,18 @@ router.post('/clarify', async (req, res) => {
       return res.status(400).json({ error: 'Utterance is required' });
     }
 
-    // Build conversational analysis prompt
+    // Build conversational analysis prompt with enhanced intelligence
     const prompt = `You are Viva.AI, an intelligent conversational assistant for blind and visually impaired users.
 
-Your job is to THINK BEFORE ACTING. Analyze if the user's request makes sense and if you need clarification.
+Your job is to THINK DEEPLY before acting. You are NOT a simple command executor - you are an intelligent assistant that UNDERSTANDS context and asks clarifying questions when needed.
+
+**CRITICAL RULES FOR SEARCH INTENT:**
+1. If user says just "search" or "find" without specifying WHAT to search for → ASK what they want to search for
+2. If user says "search for it" or "find that" without clear context → ASK what "it" or "that" refers to
+3. If utterance is vague like "find an article" → ASK about what topic
+4. NEVER immediately jump to Google search for vague queries - be proactive in asking clarifying questions
+5. If user says "summarize" on a web page → proceed immediately (clear intent)
+6. If user asks a question about current page → proceed immediately (clear intent)
 
 **CONTEXT:**
 - User said: "${utterance}"
@@ -32,31 +41,36 @@ Your job is to THINK BEFORE ACTING. Analyze if the user's request makes sense an
 - Page URL: ${pageMap?.url || 'Unknown'}
 - Page type: ${pageMap?.pageType || 'general'}
 - Recent conversation: ${memory?.recentConversation ? JSON.stringify(memory.recentConversation.slice(-3)) : 'None'}
+- Last intent: ${memory?.lastIntent || 'None'}
+- Last action: ${memory?.lastAction ? JSON.stringify(memory.lastAction) : 'None'}
 
 **YOUR TASK:**
 Analyze if this utterance is:
 1. CLEAR - Makes complete sense, you know exactly what to do
-2. VAGUE - Somewhat unclear, but you can infer the intent with reasonable confidence
-3. UNCLEAR - Confusing or nonsensical, needs clarification
+2. VAGUE - Somewhat unclear, needs clarification before proceeding
+3. UNCLEAR - Confusing, nonsensical, or speech recognition error
 
-**DECISION RULES:**
+**INTELLIGENCE GUIDELINES:**
 
-CLEAR (confidence >= 0.8):
-- Specific commands: "scroll down", "summarize this page", "search for how to grow carrots"
-- Navigation: "go to youtube", "open instagram"
+CLEAR (confidence >= 0.8) - Proceed immediately:
+- Specific commands: "scroll down", "summarize this page", "play video"
+- Specific searches: "search for how to grow carrots", "find Python tutorials"
+- Navigation: "go to youtube", "open instagram", "switch to GitHub tab"
 - Clear questions: "what is this article about?", "how do I water plants?"
-- YouTube controls: "play the video", "pause", "next video"
+- Page actions: "summarize", "read this", "explain this page"
 
-VAGUE (confidence 0.5-0.8):
-- Generic searches that might be incomplete: "search for it", "find that"
-- Pronouns without clear antecedent: "open it", "tell me about this"
-- Partial commands: "search", "find"
+VAGUE (confidence 0.4-0.8) - Ask clarifying question:
+- Generic searches: "search for it", "find that thing", "look it up"
+- Incomplete queries: "search", "find", "find an article"
+- Vague pronouns: "open it", "tell me about this" (when context unclear)
+- Partial commands: "how to", "I want to learn about"
+- Single-word searches that might be too broad: "search science"
 
-UNCLEAR (confidence < 0.5):
+UNCLEAR (confidence < 0.4) - Ask for clarification:
 - Nonsensical: "asdfgh", "blah blah", random words
-- Incomplete fragments: "how to", "I want"
-- Recognition errors that don't make sense in context
+- Speech recognition errors: garbled text
 - Too vague to act on: "do something", "help me"
+- Empty or very short utterances with no clear meaning
 
 **OUTPUT FORMAT:**
 Return ONLY raw JSON:
@@ -72,16 +86,25 @@ Return ONLY raw JSON:
 **EXAMPLES:**
 
 Input: "search for how to grow carrots at home"
-Output: {"clarity":"clear","confidence":0.95,"inferredIntent":"User wants to perform web search for carrot growing instructions","needsClarification":false,"clarificationQuestion":null,"reasoning":"Specific search query with clear intent"}
+Output: {"clarity":"clear","confidence":0.95,"inferredIntent":"User wants to perform web search for carrot growing instructions","needsClarification":false,"clarificationQuestion":null,"reasoning":"Specific search query with clear intent and topic"}
+
+Input: "find an article"
+Output: {"clarity":"vague","confidence":0.5,"inferredIntent":"User wants to search for an article but topic is unspecified","needsClarification":true,"clarificationQuestion":"What topic would you like me to search for?","reasoning":"Missing search topic - need to know what article they want"}
 
 Input: "search for it"
-Output: {"clarity":"vague","confidence":0.6,"inferredIntent":"User wants to search but subject is unclear from context","needsClarification":true,"clarificationQuestion":"What would you like me to search for?","reasoning":"Pronoun 'it' has no clear antecedent in recent conversation"}
+Output: {"clarity":"vague","confidence":0.45,"inferredIntent":"User wants to search but subject is unclear from context","needsClarification":true,"clarificationQuestion":"What would you like me to search for?","reasoning":"Pronoun 'it' has no clear antecedent in recent conversation"}
+
+Input: "search"
+Output: {"clarity":"vague","confidence":0.4,"inferredIntent":"User wants to perform a search but hasn't specified what","needsClarification":true,"clarificationQuestion":"What would you like me to search for?","reasoning":"Search command given without any search terms"}
 
 Input: "blah blah something"
 Output: {"clarity":"unclear","confidence":0.2,"inferredIntent":"Unclear speech recognition or random input","needsClarification":true,"clarificationQuestion":"I didn't understand that. Could you please repeat what you'd like me to do?","reasoning":"Utterance appears nonsensical or is speech recognition error"}
 
 Input: "summarize this page"
-Output: {"clarity":"clear","confidence":0.98,"inferredIntent":"User wants AI summary of current page content","needsClarification":false,"clarificationQuestion":null,"reasoning":"Clear command with specific action"}
+Output: {"clarity":"clear","confidence":0.98,"inferredIntent":"User wants AI summary of current page content","needsClarification":false,"clarificationQuestion":null,"reasoning":"Clear command with specific action on current page"}
+
+Input: "summarize"
+Output: {"clarity":"clear","confidence":0.95,"inferredIntent":"User wants to summarize the current page","needsClarification":false,"clarificationQuestion":null,"reasoning":"Clear intent to summarize current page even without 'this page' suffix"}
 
 NOW ANALYZE THIS INPUT AND RETURN ONLY RAW JSON:`;
 
@@ -317,6 +340,21 @@ ${content}
 
     logger.info('Summary generated:', { summaryLength: summary.length });
 
+    // Save article and summary to persistent memory
+    try {
+      const articleId = await persistentMemory.saveArticle({
+        url,
+        title,
+        content,
+        summary,
+        metadata: { summarizedAt: new Date().toISOString() }
+      });
+      logger.info(`Article saved to persistent memory: ${articleId}`);
+    } catch (memoryError) {
+      logger.warn('Failed to save to persistent memory:', memoryError);
+      // Continue anyway - don't block the response
+    }
+
     res.json({
       success: true,
       summary,
@@ -379,6 +417,37 @@ ${content}
     }
 
     logger.info('Answer generated:', { answerLength: answer.length });
+
+    // Save Q&A to persistent memory
+    try {
+      const article = await persistentMemory.findArticle(url);
+      if (article) {
+        await persistentMemory.saveQA({
+          question,
+          answer,
+          articleId: article.id
+        });
+        logger.info(`Q&A saved to persistent memory for article: ${article.id}`);
+      } else {
+        // Create article entry if it doesn't exist
+        const articleId = await persistentMemory.saveArticle({
+          url,
+          title,
+          content,
+          summary: null,
+          metadata: {}
+        });
+        await persistentMemory.saveQA({
+          question,
+          answer,
+          articleId
+        });
+        logger.info(`New article created and Q&A saved: ${articleId}`);
+      }
+    } catch (memoryError) {
+      logger.warn('Failed to save Q&A to persistent memory:', memoryError);
+      // Continue anyway - don't block the response
+    }
 
     res.json({
       success: true,
@@ -475,6 +544,143 @@ NOW ANALYZE THIS QUERY AND RETURN ONLY RAW JSON:`;
   } catch (error) {
     logger.error('Error analyzing search:', error);
     res.status(500).json({ error: 'Failed to analyze search', message: error.message });
+  }
+});
+
+// POST /ai/knowledge/search - Search stored articles and knowledge base
+router.post('/knowledge/search', async (req, res) => {
+  try {
+    const { query, limit = 10 } = req.body;
+
+    logger.info('Searching knowledge base:', { query, limit });
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    // Search articles
+    const articles = await persistentMemory.searchArticles(query, limit);
+
+    // Search experiments
+    const experiments = await persistentMemory.searchExperiments(query);
+
+    res.json({
+      success: true,
+      query,
+      articles: articles.map(a => ({
+        id: a.id,
+        url: a.url,
+        title: a.title,
+        summary: a.summary,
+        visitedAt: a.visitedAt,
+        tags: a.tags
+      })),
+      experiments: experiments.map(e => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        articleUrl: e.articleUrl
+      })),
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error searching knowledge base:', error);
+    res.status(500).json({ error: 'Failed to search knowledge base', message: error.message });
+  }
+});
+
+// POST /ai/knowledge/extract-experiments - Extract experiments from article content
+router.post('/knowledge/extract-experiments', async (req, res) => {
+  try {
+    const { content, url, title } = req.body;
+
+    logger.info('Extracting experiments from article:', { url, title });
+
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Content is required' });
+    }
+
+    // Use AI to extract experiments/procedures from content
+    const prompt = `You are Viva.AI, analyzing scientific or educational content for experiments, procedures, or practical instructions.
+
+**TASK:**
+Extract all experiments, procedures, or step-by-step instructions mentioned in this article.
+
+**ARTICLE:**
+Title: ${title || 'Unknown'}
+URL: ${url || 'Unknown'}
+
+**CONTENT:**
+${content}
+
+**OUTPUT FORMAT:**
+Return ONLY a JSON array of experiments/procedures found:
+[
+  {
+    "title": "Brief title of experiment/procedure",
+    "description": "Detailed description including steps, materials, expected results"
+  }
+]
+
+If no experiments or procedures are found, return an empty array: []
+
+ONLY return the JSON array, no other text.`;
+
+    const result = await processWithGemini(prompt);
+
+    let experiments = [];
+    if (typeof result.text === 'string') {
+      const extracted = extractJson(result.text);
+      if (Array.isArray(extracted)) {
+        experiments = extracted;
+      } else if (extracted && Array.isArray(extracted.experiments)) {
+        experiments = extracted.experiments;
+      }
+    }
+
+    logger.info(`Extracted ${experiments.length} experiments`);
+
+    // Save experiments to persistent memory
+    const article = await persistentMemory.findArticle(url);
+    if (article) {
+      for (const exp of experiments) {
+        await persistentMemory.addExperiment({
+          title: exp.title,
+          description: exp.description,
+          articleId: article.id,
+          articleUrl: url
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      experiments,
+      count: experiments.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error extracting experiments:', error);
+    res.status(500).json({ error: 'Failed to extract experiments', message: error.message });
+  }
+});
+
+// GET /ai/knowledge/stats - Get knowledge base statistics
+router.get('/knowledge/stats', async (req, res) => {
+  try {
+    const stats = await persistentMemory.getStats();
+
+    res.json({
+      success: true,
+      stats,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error getting knowledge stats:', error);
+    res.status(500).json({ error: 'Failed to get knowledge stats', message: error.message });
   }
 });
 

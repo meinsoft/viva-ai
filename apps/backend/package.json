@@ -14,6 +14,7 @@
     "dotenv": "^16.3.1",
     "@viva-ai/prompts": "*",
     "@viva-ai/schemas": "*",
-    "@viva-ai/utils": "*"
+    "@viva-ai/utils": "*",
+    "@viva-ai/storage": "*"
   }
 }

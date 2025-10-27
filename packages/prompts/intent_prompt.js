@@ -54,10 +54,12 @@ FALLBACK:
 AUTONOMOUS REASONING RULES:
 
 1. If user says "what's here", "what is this", "explain", "tell me about" → page_insight
-2. If user says "summarize", "summarize this", "read this", "what does it say" → summarize
+2. If user says "summarize", "summarize this", "summarize the page", "read this", "what does it say", "sum it up" → summarize
+   CRITICAL: "summarize" by itself is ALWAYS a clear intent to summarize the current page (confidence 0.95+)
 3. If user asks a QUESTION about page content ("how do I", "what is", "why does") → answer_question
 4. If user says "describe image", "what's in the picture", "describe photo" → vision_describe
 5. If user says "search for [query]", "find [query]", "look up [query]" → search
+   BUT: "search", "find", or "find an article" without a topic → UNKNOWN (needs clarification from /ai/clarify)
 6. If user says "search YouTube for", "find videos about", "YouTube [query]" → youtube_search
 7. If on YouTube and says "play", "pause", "next video", "previous" → youtube_control
 8. If user says "continue", "go on", "next", "more":
@@ -71,6 +73,7 @@ AUTONOMOUS REASONING RULES:
 12. NEVER return "unknown" for scroll/click/navigate/explain/search/summarize requests
 13. Use memory.recentConversation to understand context
 14. Detect language automatically from utterance
+15. Trust the /ai/clarify endpoint to handle vague queries - if a query passed clarification, assume it's actionable
 
 SEARCH vs NAVIGATE:
 - "search for carrots" → search (perform search, open best result)
@@ -112,6 +115,12 @@ Output: { "intent": "page_insight", "language": "en", "confidence": 0.87 }
 
 Input: { "utterance": "bu nedir", "pageMap": {"pageType":"article"}, "memory": {} }
 Output: { "intent": "page_insight", "language": "tr", "confidence": 0.92 }
+
+Input: { "utterance": "summarize", "pageMap": {"pageType":"article"}, "memory": {} }
+Output: { "intent": "summarize", "language": "en", "confidence": 0.96 }
+
+Input: { "utterance": "find an article", "pageMap": {}, "memory": {} }
+Output: { "intent": "search", "language": "en", "confidence": 0.5 }
 
 Input: { "utterance": "go on", "memory": {"lastAction":{"action":{"type":"ANNOUNCE"}}} }
 Output: { "intent": "page_insight", "language": "en", "confidence": 0.85 }

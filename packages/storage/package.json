@@ -1,0 +1,13 @@
+{
+  "name": "@viva-ai/storage",
+  "version": "1.0.0",
+  "description": "Persistent storage layer for Viva.AI knowledge base",
+  "type": "module",
+  "main": "persistent_memory.js",
+  "exports": {
+    ".": "./persistent_memory.js"
+  },
+  "dependencies": {
+    "@viva-ai/utils": "workspace:*"
+  }
+}

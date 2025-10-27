@@ -392,7 +392,7 @@ function fuzzyMatchScore(query, text) {
   return Math.max(fuzzyScore, phoneticScore * 0.5);
 }
 
-// Execute TAB_SWITCH action with smart fuzzy matching
+// Execute TAB_SWITCH action with enhanced smart fuzzy matching
 async function executeTabSwitch(action) {
   try {
     debugLog('Executing TAB_SWITCH:', action.value);
@@ -414,12 +414,33 @@ async function executeTabSwitch(action) {
     // Get all tabs
     const allTabs = await chrome.tabs.query({});
 
-    // Score each tab based on title and URL
-    const scoredTabs = allTabs.map(tab => {
+    // Get current active tab for recency scoring
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    // Score each tab based on title, URL, domain, and recency
+    const scoredTabs = allTabs.map((tab, index) => {
       const titleScore = fuzzyMatchScore(searchQuery, tab.title);
       const urlScore = fuzzyMatchScore(searchQuery, tab.url);
-      const maxScore = Math.max(titleScore, urlScore);
-      return { tab, score: maxScore };
+
+      // Extract domain from URL for domain-level matching
+      const domain = extractDomain(tab.url);
+      const domainScore = fuzzyMatchScore(searchQuery, domain);
+
+      // Base score is max of title, URL, and domain
+      let baseScore = Math.max(titleScore, urlScore, domainScore);
+
+      // Recency boost: slightly prefer recently accessed tabs (not active tab)
+      // This helps when multiple tabs have similar scores
+      const recencyBoost = tab.id === activeTab?.id ? 0 : Math.max(0, (5 - index * 0.5));
+
+      // Domain exact match boost (e.g., "github" matches "github.com")
+      if (domain.includes(searchQuery.toLowerCase())) {
+        baseScore = Math.max(baseScore, 80);
+      }
+
+      const finalScore = baseScore + recencyBoost;
+
+      return { tab, score: finalScore };
     });
 
     // Sort by score descending
@@ -427,9 +448,9 @@ async function executeTabSwitch(action) {
 
     debugLog('Tab match scores:', scoredTabs.slice(0, 3).map(s => ({ title: s.tab.title, score: s.score })));
 
-    // Get best match (threshold: score > 30)
+    // Get best match (threshold: score > 25, lowered for better accessibility)
     const bestMatch = scoredTabs[0];
-    if (bestMatch.score < 30) {
+    if (bestMatch.score < 25) {
       throw new Error(`No good tab match for: ${searchQuery} (best score: ${bestMatch.score})`);
     }
 
@@ -450,6 +471,16 @@ async function executeTabSwitch(action) {
   } catch (error) {
     console.error('[Viva.AI] TAB_SWITCH error:', error);
     throw new Error(`TAB_SWITCH failed: ${error.message}`);
+  }
+}
+
+// Extract domain from URL
+function extractDomain(url) {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace('www.', '');
+  } catch {
+    return '';
   }
 }
 
