@@ -150,4 +150,123 @@ router.post('/plan', async (req, res) => {
   }
 });
 
+// POST /ai/summarize - Generate summary of page content using AI
+router.post('/summarize', async (req, res) => {
+  try {
+    const { content, url, title } = req.body;
+
+    logger.info('Summarizing content:', { url, title, contentLength: content?.length });
+
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Content is required and must be a non-empty string' });
+    }
+
+    // Build prompt for summarization
+    const prompt = `You are Viva.AI, an intelligent assistant for blind and visually impaired users.
+
+Your task is to summarize the following article/page content in a clear, concise, and accessible way.
+
+**REQUIREMENTS:**
+1. Create a summary that is 3-5 sentences long
+2. Focus on the main points and key takeaways
+3. Use natural, conversational language
+4. Highlight any important facts, data, or conclusions
+5. Make it easy to understand when read aloud
+
+**PAGE INFORMATION:**
+Title: ${title || 'Unknown'}
+URL: ${url || 'Unknown'}
+
+**CONTENT TO SUMMARIZE:**
+${content}
+
+**YOUR SUMMARY:**`;
+
+    // Use Gemini to generate summary
+    const result = await processWithGemini(prompt);
+
+    let summary;
+    if (typeof result.text === 'string') {
+      summary = result.text.trim();
+    } else {
+      throw new Error('Invalid AI response format');
+    }
+
+    logger.info('Summary generated:', { summaryLength: summary.length });
+
+    res.json({
+      success: true,
+      summary,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error generating summary:', error);
+    res.status(500).json({ error: 'Failed to generate summary', message: error.message });
+  }
+});
+
+// POST /ai/answer - Answer question about page content using AI
+router.post('/answer', async (req, res) => {
+  try {
+    const { question, content, url, title } = req.body;
+
+    logger.info('Answering question:', { question, url, title, contentLength: content?.length });
+
+    if (!question || typeof question !== 'string' || question.trim().length === 0) {
+      return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
+    }
+
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return res.status(400).json({ error: 'Content is required and must be a non-empty string' });
+    }
+
+    // Build prompt for Q&A
+    const prompt = `You are Viva.AI, an intelligent assistant for blind and visually impaired users.
+
+Your task is to answer the user's question based on the page content provided.
+
+**REQUIREMENTS:**
+1. Answer the question directly and concisely (2-3 sentences)
+2. Use only information from the provided content
+3. If the answer is not in the content, say "I couldn't find that information on this page"
+4. Use natural, conversational language
+5. Make it easy to understand when read aloud
+
+**PAGE INFORMATION:**
+Title: ${title || 'Unknown'}
+URL: ${url || 'Unknown'}
+
+**USER'S QUESTION:**
+${question}
+
+**PAGE CONTENT:**
+${content}
+
+**YOUR ANSWER:**`;
+
+    // Use Gemini to generate answer
+    const result = await processWithGemini(prompt);
+
+    let answer;
+    if (typeof result.text === 'string') {
+      answer = result.text.trim();
+    } else {
+      throw new Error('Invalid AI response format');
+    }
+
+    logger.info('Answer generated:', { answerLength: answer.length });
+
+    res.json({
+      success: true,
+      answer,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    logger.error('Error generating answer:', error);
+    res.status(500).json({ error: 'Failed to generate answer', message: error.message });
+  }
+});
+
 export default router;
