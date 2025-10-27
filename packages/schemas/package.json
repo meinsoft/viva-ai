@@ -1,0 +1,12 @@
+{
+  "name": "@viva-ai/schemas",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared JSON schemas for Viva.AI intent and action validation",
+  "main": "index.js",
+  "exports": {
+    "./intent_schema.js": "./intent_schema.js",
+    "./action_schema.js": "./action_schema.js",
+    "./plan_schema.js": "./plan_schema.js"
+  }
+}
