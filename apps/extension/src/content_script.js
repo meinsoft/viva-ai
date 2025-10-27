@@ -1,7 +1,5 @@
 // Viva.AI Content Script - DOM awareness and safe action execution
 
-import { persistentMemory } from './memory.js';
-
 // Diagnostics mode helper
 function isDiagnosticsEnabled() {
   try {
@@ -607,13 +605,16 @@ async function executeSummarize(action, language = 'en') {
     // Speak the summary using TTS
     speakText(result.summary, language);
 
-    // Save to persistent memory for eternal recall
+    // Save to persistent memory for eternal recall via background script
     try {
-      await persistentMemory.saveArticle({
-        url: window.location.href,
-        title: document.title,
-        summary: result.summary,
-        content: pageContent
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_ARTICLE',
+        data: {
+          url: window.location.href,
+          title: document.title,
+          summary: result.summary,
+          content: pageContent
+        }
       });
       debugLog('Article saved to persistent memory');
     } catch (memoryError) {
@@ -678,13 +679,16 @@ async function executeAnswerQuestion(action, language = 'en') {
     // Speak the answer using TTS
     speakText(result.answer, language);
 
-    // Save Q&A to persistent memory for eternal recall
+    // Save Q&A to persistent memory for eternal recall via background script
     try {
-      await persistentMemory.saveConversation({
-        url: window.location.href,
-        title: document.title,
-        question: action.value,
-        answer: result.answer
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_CONVERSATION',
+        data: {
+          url: window.location.href,
+          title: document.title,
+          question: action.value,
+          answer: result.answer
+        }
       });
       debugLog('Q&A conversation saved to persistent memory');
     } catch (memoryError) {

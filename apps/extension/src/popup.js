@@ -111,55 +111,36 @@ async function processUtterance(utterance) {
     const memoryContext = sessionMemory.getRelevantContext();
     debugLog('Memory context:', memoryContext);
 
-    // STAGE 0.5: Conversational AI - Think before acting
-    updateStatus('Thinking...');
-    debugLog('Calling conversational AI layer');
+    // STAGE 0.5: Conversational AI - Think before acting (OPTIONAL - graceful degradation)
+    updateStatus('🤔 Thinking...');
+    try {
+      const clarifyResponse = await fetch(`${BACKEND_URL}/ai/clarify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          utterance: utterance,
+          pageMap: currentPageMap,
+          memory: memoryContext,
+          locale: 'en'
+        })
+      });
 
-    const clarifyResponse = await fetch(`${BACKEND_URL}/ai/clarify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        utterance: utterance,
-        pageMap: currentPageMap,
-        memory: memoryContext,
-        locale: 'en'
-      })
-    });
+      if (clarifyResponse.ok) {
+        const clarifyResult = await clarifyResponse.json();
+        if (clarifyResult.success && clarifyResult.analysis) {
+          const { clarity, confidence, needsClarification, clarificationQuestion } = clarifyResult.analysis;
 
-    if (!clarifyResponse.ok) {
-      console.warn('[Viva.AI] Clarification failed, proceeding anyway');
-    } else {
-      const clarifyResult = await clarifyResponse.json();
-      debugLog('Conversational analysis:', clarifyResult);
-
-      if (clarifyResult.success && clarifyResult.analysis) {
-        const { clarity, confidence, needsClarification, clarificationQuestion } = clarifyResult.analysis;
-
-        debugLog(`Clarity: ${clarity}, Confidence: ${confidence}, Needs clarification: ${needsClarification}`);
-
-        // If AI needs clarification, ask the user
-        if (needsClarification && clarificationQuestion) {
-          speakText(clarificationQuestion, 'en');
-          updateStatus(`❓ ${clarificationQuestion}`);
-          debugLog('Waiting for user clarification...');
-
-          // Store that we're waiting for clarification
-          sessionMemory.context.waitingForClarification = {
-            originalUtterance: utterance,
-            question: clarificationQuestion,
-            timestamp: Date.now()
-          };
-
-          return; // Exit and wait for user to respond
-        }
-
-        // If confidence is very low but not asking for clarification, warn user
-        if (confidence < 0.5 && !needsClarification) {
-          const warningMsg = "I'm not sure I understood that correctly, but I'll try.";
-          speakText(warningMsg, 'en');
-          debugLog('Low confidence warning given to user');
+          // If AI needs clarification, ask the user
+          if (needsClarification && clarificationQuestion) {
+            speakText(clarificationQuestion, 'en');
+            updateStatus(`❓ ${clarificationQuestion}`);
+            return; // Exit and wait for user to respond
+          }
         }
       }
+    } catch (clarifyError) {
+      console.warn('[Viva.AI] Clarify endpoint not available:', clarifyError.message);
+      // Continue anyway - clarify is optional
     }
 
     // Check if this is a clarification response
@@ -171,7 +152,7 @@ async function processUtterance(utterance) {
     }
 
     // STAGE 1: Classify intent with autonomous cognitive understanding
-    updateStatus('Understanding...');
+    updateStatus('🧠 Understanding what you want...');
     debugLog('Calling /ai/intent with memory context');
 
     const intentResponse = await fetch(`${BACKEND_URL}/ai/intent`, {
@@ -186,21 +167,23 @@ async function processUtterance(utterance) {
     });
 
     if (!intentResponse.ok) {
-      throw new Error(`Intent classification failed: ${intentResponse.status}`);
+      const errorText = await intentResponse.text();
+      throw new Error(`Backend error (${intentResponse.status}): ${errorText.substring(0, 100)}`);
     }
 
     const intentResult = await intentResponse.json();
     debugLog('Intent result:', intentResult);
 
     if (!intentResult.success || !intentResult.intent) {
-      throw new Error('No intent detected');
+      throw new Error('Could not understand your request');
     }
 
     const { intent, language, confidence } = intentResult;
+    updateStatus(`📋 Intent: ${intent} (${Math.round(confidence * 100)}% confident)`);
     debugLog(`Intent: ${intent}, Language: ${language}, Confidence: ${confidence}`);
 
     // STAGE 2: Generate action plan
-    updateStatus('Planning...');
+    updateStatus('📝 Planning how to do it...');
     debugLog('Calling /ai/plan');
 
     const planResponse = await fetch(`${BACKEND_URL}/ai/plan`, {
@@ -215,21 +198,22 @@ async function processUtterance(utterance) {
     });
 
     if (!planResponse.ok) {
-      throw new Error(`Plan generation failed: ${planResponse.status}`);
+      const errorText = await planResponse.text();
+      throw new Error(`Plan failed (${planResponse.status}): ${errorText.substring(0, 100)}`);
     }
 
     const planResult = await planResponse.json();
     debugLog('Plan result:', planResult);
 
     if (!planResult.success || !planResult.plan) {
-      throw new Error('No plan generated');
+      throw new Error('Could not create action plan');
     }
 
     const plan = planResult.plan;
+    updateStatus(`⚙️ Executing ${plan.actions.length} action(s)...`);
     debugLog('Plan:', JSON.stringify(plan, null, 2));
 
     // STAGE 3: Execute plan immediately (FULL TRUST MODE - no confirmation)
-    updateStatus('Executing...');
     debugLog('Executing plan [FULL TRUST]');
 
     const executeResult = await chrome.runtime.sendMessage({
@@ -244,10 +228,10 @@ async function processUtterance(utterance) {
     // STAGE 4: Always speak back (TTS)
     if (plan.speak) {
       speakText(plan.speak, language);
-      updateStatus(`✓ ${plan.speak}`);
+      updateStatus(`✅ ${plan.speak}`);
       debugLog(`Executed ${executeResult.executed || 0}/${executeResult.total || plan.actions.length} actions`);
     } else {
-      updateStatus('Action completed');
+      updateStatus('✅ Done');
     }
 
     // Update session memory with conversation turn
