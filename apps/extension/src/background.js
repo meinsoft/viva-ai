@@ -1,5 +1,7 @@
 // Viva.AI Background Service Worker
 
+import { persistentMemory } from './memory.js';
+
 // Diagnostics mode helper
 function isDiagnosticsEnabled() {
   try {
@@ -207,17 +209,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
   }
 
-  if (message.type === 'SAVE_SUMMARY_MEMORY') {
+  if (message.type === 'SAVE_ARTICLE') {
     persistentMemory.saveArticle(message.data)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ error: error.message }));
+      .then(result => sendResponse({ success: true, result }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
-  if (message.type === 'SAVE_QA_MEMORY') {
-    persistentMemory.saveQA(message.data)
-      .then(result => sendResponse(result))
-      .catch(error => sendResponse({ error: error.message }));
+  if (message.type === 'SAVE_CONVERSATION') {
+    persistentMemory.saveConversation(message.data)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
