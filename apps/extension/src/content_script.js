@@ -349,8 +349,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return false;
 });
 
-// Execute DOM actions safely
-function executeAction(action, language = 'en') {
+// Execute DOM actions safely (NOW ASYNC!)
+async function executeAction(action, language = 'en') {
   debugLog('executeAction called:', action.type);
 
   try {
@@ -368,7 +368,10 @@ function executeAction(action, language = 'en') {
         return executeAnnounce(action, language);
 
       case 'SUMMARIZE':
-        return executeSummarize(action, language);
+        console.log('🔥 SUMMARIZE BAŞLIYOR...');
+        const summaryResult = await executeSummarize(action, language);
+        console.log('✅ SUMMARIZE BİTTİ:', summaryResult);
+        return summaryResult;
 
       case 'DESCRIBE':
         // These are informational actions, return success
@@ -376,7 +379,10 @@ function executeAction(action, language = 'en') {
         return { executed: true, type: action.type, message: 'Informational action completed' };
 
       case 'ANSWER_QUESTION':
-        return executeAnswerQuestion(action, language);
+        console.log('🔥 ANSWER_QUESTION BAŞLIYOR...');
+        const answerResult = await executeAnswerQuestion(action, language);
+        console.log('✅ ANSWER_QUESTION BİTTİ:', answerResult);
+        return answerResult;
 
       case 'YOUTUBE_CONTROL':
         return executeYouTubeControl(action);
@@ -567,18 +573,21 @@ function executeAnnounce(action, language = 'en') {
 // SUMMARIZE: Extract page content and generate AI summary
 async function executeSummarize(action, language = 'en') {
   try {
-    debugLog('Executing SUMMARIZE');
+    console.log('📖 ADIM 1: Sayfa içeriği okunuyor...');
 
     // Extract main content from the page
     const pageContent = extractPageContent();
 
     if (!pageContent || pageContent.length === 0) {
+      console.error('❌ HATA: Sayfa içeriği bulunamadı!');
       throw new Error('No content found to summarize');
     }
 
-    debugLog('Extracted content for summarization:', pageContent.substring(0, 200) + '...');
+    console.log(`✅ ADIM 1 BİTTİ: ${pageContent.length} karakter okundu`);
+    console.log('İçerik önizleme:', pageContent.substring(0, 200) + '...');
 
     // Call backend to generate AI summary
+    console.log('🤖 ADIM 2: Backend AI\'ya gönderiliyor...');
     const BACKEND_URL = 'http://localhost:5000';
     const response = await fetch(`${BACKEND_URL}/ai/summarize`, {
       method: 'POST',
@@ -591,19 +600,27 @@ async function executeSummarize(action, language = 'en') {
     });
 
     if (!response.ok) {
+      console.error(`❌ BACKEND HATASI: ${response.status}`);
+      const errorText = await response.text();
+      console.error('Hata detayı:', errorText);
       throw new Error(`Backend error: ${response.status}`);
     }
+
+    console.log('✅ ADIM 2 BİTTİ: Backend yanıt verdi');
 
     const result = await response.json();
 
     if (!result.success || !result.summary) {
+      console.error('❌ HATA: Backend geçersiz yanıt verdi:', result);
       throw new Error('Invalid response from backend');
     }
 
-    debugLog('Summary generated:', result.summary);
+    console.log('📝 ÖZET OLUŞTURULDU:', result.summary);
 
     // Speak the summary using TTS
+    console.log('🔊 ADIM 3: Özet sesli okunuyor...');
     speakText(result.summary, language);
+    console.log('✅ ADIM 3 BİTTİ: TTS başladı');
 
     // Save to persistent memory for eternal recall via background script
     try {
