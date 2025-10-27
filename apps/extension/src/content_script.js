@@ -1,5 +1,7 @@
 // Viva.AI Content Script - DOM awareness and safe action execution
 
+import { persistentMemory } from './memory.js';
+
 // Diagnostics mode helper
 function isDiagnosticsEnabled() {
   try {
@@ -179,6 +181,87 @@ function buildPageMap() {
   }
 }
 
+// Extract Google search results for AI analysis
+function extractGoogleSearchResults() {
+  try {
+    const results = [];
+
+    // Google search result selectors (handles various Google layouts)
+    const searchResults = document.querySelectorAll('div.g, div[data-sokoban-container], div[data-hveid]');
+
+    debugLog('Found potential search results:', searchResults.length);
+
+    for (let i = 0; i < Math.min(searchResults.length, 5); i++) {
+      const resultElement = searchResults[i];
+
+      // Extract title
+      const titleElement = resultElement.querySelector('h3, div[role="heading"]');
+      const title = titleElement ? titleElement.textContent.trim() : null;
+
+      // Extract URL
+      const linkElement = resultElement.querySelector('a[href]');
+      const url = linkElement ? linkElement.href : null;
+
+      // Extract snippet/description
+      const snippetElement = resultElement.querySelector('div[data-sncf], div.VwiC3b, span.st, div.IsZvec');
+      const snippet = snippetElement ? snippetElement.textContent.trim() : null;
+
+      // Only add if we have at least title and URL
+      if (title && url && !url.includes('google.com/search')) {
+        results.push({
+          position: i + 1,
+          title: title.substring(0, 150),
+          url: url.substring(0, 200),
+          snippet: snippet ? snippet.substring(0, 250) : null,
+          type: determineResultType(url, title, snippet)
+        });
+      }
+    }
+
+    debugLog('Extracted search results:', results.length, results);
+    return results;
+  } catch (error) {
+    console.error('[Viva.AI] Error extracting search results:', error);
+    return [];
+  }
+}
+
+// Determine the type of search result (PDF, Wikipedia, blog, etc.)
+function determineResultType(url, title, snippet) {
+  const urlLower = url.toLowerCase();
+  const titleLower = (title || '').toLowerCase();
+
+  if (urlLower.endsWith('.pdf') || titleLower.includes('[pdf]')) {
+    return 'PDF document';
+  }
+  if (urlLower.includes('wikipedia.org')) {
+    return 'Wikipedia article';
+  }
+  if (urlLower.includes('youtube.com')) {
+    return 'YouTube video';
+  }
+  if (urlLower.includes('github.com')) {
+    return 'GitHub repository';
+  }
+  if (urlLower.includes('stackoverflow.com') || urlLower.includes('stackexchange.com')) {
+    return 'Stack Overflow discussion';
+  }
+  if (urlLower.includes('reddit.com')) {
+    return 'Reddit discussion';
+  }
+  if (urlLower.includes('medium.com') || urlLower.includes('blog') || urlLower.includes('/blog/')) {
+    return 'Blog post';
+  }
+  if (urlLower.includes('.gov')) {
+    return 'Government website';
+  }
+  if (urlLower.includes('.edu')) {
+    return 'Educational resource';
+  }
+
+  return 'Website';
+}
+
 // Detect first <h1> on page (legacy support)
 function detectPageHeading() {
   const firstH1 = document.querySelector('h1');
@@ -249,6 +332,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     return true; // Keep channel open for async response
+  }
+
+  if (message.type === 'EXTRACT_SEARCH_RESULTS') {
+    debugLog('Extracting search results from Google search page');
+    const results = extractGoogleSearchResults();
+    sendResponse({ success: true, results });
+    return false;
+  }
+
+  if (message.type === 'SPEAK_TEXT') {
+    debugLog('Speaking text:', message.text);
+    speakText(message.text, message.language || 'en');
+    sendResponse({ success: true });
+    return false;
   }
 
   return false;
@@ -512,19 +609,15 @@ async function executeSummarize(action, language = 'en') {
 
     // Save to persistent memory for eternal recall
     try {
-      await chrome.runtime.sendMessage({
-        type: 'SAVE_SUMMARY_MEMORY',
-        data: {
-          url: window.location.href,
-          title: document.title,
-          summary: result.summary,
-          content: pageContent,
-          timestamp: Date.now()
-        }
+      await persistentMemory.saveArticle({
+        url: window.location.href,
+        title: document.title,
+        summary: result.summary,
+        content: pageContent
       });
-      debugLog('Summary saved to persistent memory');
-    } catch (memError) {
-      console.warn('[Viva.AI] Failed to save summary to memory:', memError);
+      debugLog('Article saved to persistent memory');
+    } catch (memoryError) {
+      console.warn('[Viva.AI] Failed to save to persistent memory:', memoryError);
     }
 
     return {
@@ -587,20 +680,15 @@ async function executeAnswerQuestion(action, language = 'en') {
 
     // Save Q&A to persistent memory for eternal recall
     try {
-      await chrome.runtime.sendMessage({
-        type: 'SAVE_QA_MEMORY',
-        data: {
-          question: action.value,
-          answer: result.answer,
-          url: window.location.href,
-          title: document.title,
-          context: pageContent.substring(0, 300),
-          timestamp: Date.now()
-        }
+      await persistentMemory.saveConversation({
+        url: window.location.href,
+        title: document.title,
+        question: action.value,
+        answer: result.answer
       });
-      debugLog('Q&A saved to persistent memory');
-    } catch (memError) {
-      console.warn('[Viva.AI] Failed to save Q&A to memory:', memError);
+      debugLog('Q&A conversation saved to persistent memory');
+    } catch (memoryError) {
+      console.warn('[Viva.AI] Failed to save Q&A to persistent memory:', memoryError);
     }
 
     return {

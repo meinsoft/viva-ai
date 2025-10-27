@@ -727,42 +727,6 @@ async function executeSearch(tabId, action) {
       throw new Error('SEARCH requires a search query value');
     }
 
-    // Call intelligent search analysis first
-    try {
-      const analysisResponse = await fetch(`${BACKEND_URL}/ai/search-analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: action.value })
-      });
-
-      if (analysisResponse.ok) {
-        const analysisResult = await analysisResponse.json();
-        debugLog('Search analysis:', analysisResult);
-
-        if (analysisResult.success && analysisResult.analysis) {
-          const { voiceAnnouncement } = analysisResult.analysis;
-
-          // Announce search analysis to user via content script
-          if (voiceAnnouncement) {
-            // Send announcement to content script to speak
-            await chrome.tabs.sendMessage(tabId, {
-              type: 'EXECUTE_ACTION',
-              action: {
-                type: 'ANNOUNCE',
-                value: voiceAnnouncement,
-                confirmation: false
-              },
-              language: 'en'
-            });
-
-            debugLog('Search analysis announced to user');
-          }
-        }
-      }
-    } catch (analysisError) {
-      console.warn('[Viva.AI] Search analysis failed, proceeding with basic search:', analysisError);
-    }
-
     // Perform Google search by navigating to search results
     const searchQuery = encodeURIComponent(action.value);
     const searchURL = `https://www.google.com/search?q=${searchQuery}`;
@@ -772,17 +736,97 @@ async function executeSearch(tabId, action) {
 
     debugLog('Search performed:', action.value);
 
+    // Wait for page to load completely
+    await waitForPageLoad(tabId);
+
+    // Extract search results from Google search page
+    let searchResults = [];
+    try {
+      const extractResponse = await chrome.tabs.sendMessage(tabId, {
+        type: 'EXTRACT_SEARCH_RESULTS'
+      });
+
+      if (extractResponse && extractResponse.success) {
+        searchResults = extractResponse.results || [];
+        debugLog('Extracted search results:', searchResults.length, 'results');
+      }
+    } catch (extractError) {
+      console.warn('[Viva.AI] Could not extract search results:', extractError.message);
+    }
+
+    // Call AI to analyze search results and generate voice announcement
+    let voiceAnnouncement = null;
+    if (searchResults.length > 0) {
+      try {
+        const analyzeResponse = await fetch(`${BACKEND_URL}/ai/search-analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: action.value,
+            results: searchResults
+          })
+        });
+
+        if (analyzeResponse.ok) {
+          const analyzeResult = await analyzeResponse.json();
+          if (analyzeResult.success && analyzeResult.analysis) {
+            voiceAnnouncement = analyzeResult.analysis.voiceAnnouncement;
+            debugLog('AI search analysis:', voiceAnnouncement);
+
+            // Speak the announcement via content script
+            if (voiceAnnouncement) {
+              await chrome.tabs.sendMessage(tabId, {
+                type: 'SPEAK_TEXT',
+                text: voiceAnnouncement,
+                language: 'en'
+              });
+            }
+          }
+        }
+      } catch (analyzeError) {
+        console.warn('[Viva.AI] Search analysis failed:', analyzeError.message);
+      }
+    }
+
     return {
       success: true,
       executed: true,
       type: 'SEARCH',
       query: action.value,
-      url: searchURL
+      url: searchURL,
+      resultsFound: searchResults.length,
+      voiceAnnouncement: voiceAnnouncement
     };
   } catch (error) {
     console.error('[Viva.AI] SEARCH error:', error);
     throw new Error(`SEARCH failed: ${error.message}`);
   }
+}
+
+// Wait for page to finish loading
+async function waitForPageLoad(tabId, timeout = 10000) {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+
+    const checkStatus = async () => {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+
+        if (tab.status === 'complete') {
+          // Give extra 500ms for dynamic content
+          setTimeout(resolve, 500);
+        } else if (Date.now() - startTime > timeout) {
+          reject(new Error('Page load timeout'));
+        } else {
+          setTimeout(checkStatus, 100);
+        }
+      } catch (error) {
+        reject(error);
+      }
+    };
+
+    checkStatus();
+  });
 }
 
 // Execute YOUTUBE_SEARCH action - search YouTube and navigate to results
