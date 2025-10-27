@@ -41,7 +41,7 @@ function initSpeechRecognition() {
   }
 
   const recognition = new SpeechRecognition();
-  recognition.lang = 'az-AZ'; // Azerbaijani
+  recognition.lang = 'en-US'; // English (default)
   recognition.interimResults = false;
   recognition.maxAlternatives = 1;
   recognition.continuous = false;
@@ -110,6 +110,65 @@ async function processUtterance(utterance) {
     // Get memory context for cognitive understanding
     const memoryContext = sessionMemory.getRelevantContext();
     debugLog('Memory context:', memoryContext);
+
+    // STAGE 0.5: Conversational AI - Think before acting
+    updateStatus('Thinking...');
+    debugLog('Calling conversational AI layer');
+
+    const clarifyResponse = await fetch(`${BACKEND_URL}/ai/clarify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        utterance: utterance,
+        pageMap: currentPageMap,
+        memory: memoryContext,
+        locale: 'en'
+      })
+    });
+
+    if (!clarifyResponse.ok) {
+      console.warn('[Viva.AI] Clarification failed, proceeding anyway');
+    } else {
+      const clarifyResult = await clarifyResponse.json();
+      debugLog('Conversational analysis:', clarifyResult);
+
+      if (clarifyResult.success && clarifyResult.analysis) {
+        const { clarity, confidence, needsClarification, clarificationQuestion } = clarifyResult.analysis;
+
+        debugLog(`Clarity: ${clarity}, Confidence: ${confidence}, Needs clarification: ${needsClarification}`);
+
+        // If AI needs clarification, ask the user
+        if (needsClarification && clarificationQuestion) {
+          speakText(clarificationQuestion, 'en');
+          updateStatus(`❓ ${clarificationQuestion}`);
+          debugLog('Waiting for user clarification...');
+
+          // Store that we're waiting for clarification
+          sessionMemory.context.waitingForClarification = {
+            originalUtterance: utterance,
+            question: clarificationQuestion,
+            timestamp: Date.now()
+          };
+
+          return; // Exit and wait for user to respond
+        }
+
+        // If confidence is very low but not asking for clarification, warn user
+        if (confidence < 0.5 && !needsClarification) {
+          const warningMsg = "I'm not sure I understood that correctly, but I'll try.";
+          speakText(warningMsg, 'en');
+          debugLog('Low confidence warning given to user');
+        }
+      }
+    }
+
+    // Check if this is a clarification response
+    if (memoryContext.waitingForClarification) {
+      debugLog('This is a clarification response to:', memoryContext.waitingForClarification.originalUtterance);
+      // Combine original utterance with clarification
+      utterance = memoryContext.waitingForClarification.originalUtterance + ' ' + utterance;
+      delete sessionMemory.context.waitingForClarification;
+    }
 
     // STAGE 1: Classify intent with autonomous cognitive understanding
     updateStatus('Understanding...');

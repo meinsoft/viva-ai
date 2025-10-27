@@ -222,6 +222,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     debugLog('Executing action [FULL TRUST]:', action.type, 'with language:', language);
 
     // FULL TRUST MODE: Execute all actions immediately without confirmation
+    // Handle async actions (SUMMARIZE, ANSWER_QUESTION)
+    if (action.type === 'SUMMARIZE' || action.type === 'ANSWER_QUESTION') {
+      executeAction(action, language)
+        .then(result => {
+          debugLog('Action executed:', action.type, result);
+          sendResponse({ success: true, result });
+        })
+        .catch(error => {
+          console.error('[Viva.AI] Error executing action:', error);
+          debugLog('Action execution error:', action.type, error.message);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep channel open for async response
+    }
+
+    // Sync actions
     try {
       const result = executeAction(action, language);
       debugLog('Action executed:', action.type, result);
@@ -453,8 +469,8 @@ function executeAnnounce(action, language = 'en') {
   }
 }
 
-// SUMMARIZE: Extract page content and generate summary
-function executeSummarize(action, language = 'en') {
+// SUMMARIZE: Extract page content and generate AI summary
+async function executeSummarize(action, language = 'en') {
   try {
     debugLog('Executing SUMMARIZE');
 
@@ -467,20 +483,47 @@ function executeSummarize(action, language = 'en') {
 
     debugLog('Extracted content for summarization:', pageContent.substring(0, 200) + '...');
 
-    // Return the extracted content - backend will handle AI summarization
+    // Call backend to generate AI summary
+    const BACKEND_URL = 'http://localhost:5000';
+    const response = await fetch(`${BACKEND_URL}/ai/summarize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content: pageContent,
+        url: window.location.href,
+        title: document.title
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success || !result.summary) {
+      throw new Error('Invalid response from backend');
+    }
+
+    debugLog('Summary generated:', result.summary);
+
+    // Speak the summary using TTS
+    speakText(result.summary, language);
+
     return {
       executed: true,
       type: 'SUMMARIZE',
-      content: pageContent,
-      message: 'Content extracted for summarization'
+      summary: result.summary,
+      message: 'Summary generated and spoken'
     };
   } catch (error) {
+    console.error('[Viva.AI] SUMMARIZE error:', error);
     throw new Error(`SUMMARIZE failed: ${error.message}`);
   }
 }
 
-// ANSWER_QUESTION: Answer question about current page content
-function executeAnswerQuestion(action, language = 'en') {
+// ANSWER_QUESTION: Answer question about current page content using AI
+async function executeAnswerQuestion(action, language = 'en') {
   try {
     debugLog('Executing ANSWER_QUESTION:', action.value);
 
@@ -497,17 +540,65 @@ function executeAnswerQuestion(action, language = 'en') {
 
     debugLog('Extracted content for Q&A:', pageContent.substring(0, 200) + '...');
 
-    // Return question and content - backend will handle AI response
+    // Call backend to generate AI answer
+    const BACKEND_URL = 'http://localhost:5000';
+    const response = await fetch(`${BACKEND_URL}/ai/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question: action.value,
+        content: pageContent,
+        url: window.location.href,
+        title: document.title
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Backend error: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (!result.success || !result.answer) {
+      throw new Error('Invalid response from backend');
+    }
+
+    debugLog('Answer generated:', result.answer);
+
+    // Speak the answer using TTS
+    speakText(result.answer, language);
+
     return {
       executed: true,
       type: 'ANSWER_QUESTION',
-      question: action.value,
-      content: pageContent,
-      message: 'Question and content extracted for AI processing'
+      answer: result.answer,
+      message: 'Answer generated and spoken'
     };
   } catch (error) {
+    console.error('[Viva.AI] ANSWER_QUESTION error:', error);
     throw new Error(`ANSWER_QUESTION failed: ${error.message}`);
   }
+}
+
+// Helper function to speak text using TTS
+function speakText(text, language = 'en') {
+  if (!window.speechSynthesis) {
+    console.warn('[Viva.AI] SpeechSynthesis not available');
+    return;
+  }
+
+  // Cancel any ongoing speech
+  window.speechSynthesis.cancel();
+
+  const voiceLang = mapLanguageToVoice(language);
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = voiceLang;
+  utterance.rate = 0.95; // Slightly slower for clarity
+  utterance.pitch = 1.0;
+  utterance.volume = 1.0;
+
+  debugLog('Speaking:', text.substring(0, 100) + '...');
+  window.speechSynthesis.speak(utterance);
 }
 
 // YOUTUBE_CONTROL: Control YouTube video playback

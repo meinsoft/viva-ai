@@ -555,13 +555,49 @@ async function executeNavigate(tabId, action) {
   }
 }
 
-// Execute SEARCH action - perform web search and navigate to results
+// Execute SEARCH action - perform intelligent web search with AI analysis
 async function executeSearch(tabId, action) {
   try {
     debugLog('Executing SEARCH:', action.value);
 
     if (!action.value) {
       throw new Error('SEARCH requires a search query value');
+    }
+
+    // Call intelligent search analysis first
+    try {
+      const analysisResponse = await fetch(`${BACKEND_URL}/ai/search-analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: action.value })
+      });
+
+      if (analysisResponse.ok) {
+        const analysisResult = await analysisResponse.json();
+        debugLog('Search analysis:', analysisResult);
+
+        if (analysisResult.success && analysisResult.analysis) {
+          const { voiceAnnouncement } = analysisResult.analysis;
+
+          // Announce search analysis to user via content script
+          if (voiceAnnouncement) {
+            // Send announcement to content script to speak
+            await chrome.tabs.sendMessage(tabId, {
+              type: 'EXECUTE_ACTION',
+              action: {
+                type: 'ANNOUNCE',
+                value: voiceAnnouncement,
+                confirmation: false
+              },
+              language: 'en'
+            });
+
+            debugLog('Search analysis announced to user');
+          }
+        }
+      }
+    } catch (analysisError) {
+      console.warn('[Viva.AI] Search analysis failed, proceeding with basic search:', analysisError);
     }
 
     // Perform Google search by navigating to search results
